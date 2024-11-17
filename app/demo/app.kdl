@@ -1,0 +1,35 @@
+// Demo Application Definition
+
+// App name is used for output files etc.
+name "demo"
+
+// Currently the board information is inlined. It would be nice to refer to an
+// external file, like we already do for chip definitions.
+board {
+    name "nucleo-g031k8"
+    chip "stm32g031k8"
+}
+
+// Instructions for building the kernel.
+kernel {
+    workspace-crate "kernel-generic-stm32g031"
+    stack-size 1024
+}
+
+// IPC server. This must be first for ping to find it, currently.
+task "pong" {
+    workspace-crate "pong"
+    stack-size 256
+}
+
+// IPC generator. This can be in any position.
+task "ping" {
+    workspace-crate "ping"
+    stack-size 256
+}
+
+// Idle task. This must be last, currently, since priorities aren't exposed yet.
+task "idle" {
+    workspace-crate "idle"
+    stack-size 128
+}

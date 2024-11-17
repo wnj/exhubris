@@ -1,0 +1,18 @@
+name "STM32G031K8"
+target-triple "thumbv6m-none-eabi"
+vector-table-size 0xC0
+
+memory {
+    region "vectors" {
+        base 0x0800_0000
+        size 0x110 // enlarged to accommodate header
+    }
+    region "flash" {
+        base 0x0800_0110
+        size 0xFEF0
+    }
+    region "ram" {
+        base 0x2000_0000
+        size 8192
+    }
+}

@@ -1,0 +1,4 @@
+# IPC server
+
+This task sends do-nothing replies to short IPC messages, and is intended as a
+counterpart to `ping` for testing IPC mechanisms.

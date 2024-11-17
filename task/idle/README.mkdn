@@ -1,0 +1,15 @@
+# idle task
+
+This task just pauses the CPU waiting for interrupts. At least one interrupt,
+the timer interrupt, will eventually arrive. This is useful for reducing power
+consumption when there's no work to be done.
+
+The idle task is designed to be generic and should work for most applications on
+most CPUs. You can replace it if you'd like to do some work at idle, or if you
+have specific needs for setting the processor into a low power state.
+
+**Note:** there must be at least one task in an application that is runnable at
+all times. The idle task is one way of achieving this. If you forget to include
+an idle task, your application will crash --- generally right away.
+
+

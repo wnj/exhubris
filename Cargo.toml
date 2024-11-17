@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [ "kernel-generic-stm32g031","sys/userlib", "task/idle", "task/ping", "task/pong", "tools"]
+
+[workspace.dependencies]
+userlib = {path = "sys/userlib"}
+
+[profile.release]
+debug = true
