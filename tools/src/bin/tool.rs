@@ -317,6 +317,7 @@ fn main() -> miette::Result<()> {
                 let initial_stack_pointer = initial_stack_pointer.expect("missing RAM region?");
 
                 built_tasks.push(BuiltTask {
+                    name: taskname.to_string(),
                     path: outpath2,
                     entry,
                     initial_stack_pointer,
@@ -342,7 +343,7 @@ fn main() -> miette::Result<()> {
                         region_name: task.initial_stack_pointer.region.clone(),
                         offset: u32::try_from(task.initial_stack_pointer.offset).into_diagnostic()?,
                     },
-                    priority: 0, // TODO
+                    priority: *app.tasks[&task.name].priority.value(),
                     start_at_boot: true,
                 };
 
@@ -689,6 +690,7 @@ fn maybe_create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
 }
 
 struct BuiltTask {
+    name: String,
     path: PathBuf,
     entry: OwnedAddress,
     initial_stack_pointer: OwnedAddress,

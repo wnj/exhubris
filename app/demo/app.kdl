@@ -20,16 +20,19 @@ kernel {
 task "pong" {
     workspace-crate "pong"
     stack-size 256
+    priority 0
 }
 
 // IPC generator. This can be in any position.
 task "ping" {
     workspace-crate "ping"
     stack-size 256
+    priority 1
 }
 
-// Idle task. This must be last, currently, since priorities aren't exposed yet.
+// Idle task. This must be the lowest priority task.
 task "idle" {
     workspace-crate "idle"
     stack-size 128
+    priority 2
 }

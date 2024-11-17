@@ -71,6 +71,9 @@ pub struct TaskDef {
     /// Explicit stack size for task.
     pub stack_size: Spanned<u64>,
 
+    /// Priority of the task (lower numbers are more important).
+    pub priority: Spanned<u8>,
+
     pub package_source: Spanned<PackageSource>,
 
     pub cargo_features: BTreeMap<String, SourceSpan>,
@@ -320,6 +323,17 @@ pub fn parse_task(
                 })
         })?;
        
+        let priority = get_unique_i64_value(doc, "priority")?;
+        let priority = priority.try_map_with_span(|i, span| {
+            u8::try_from(i)
+                .map_err(|_| {
+                    miette!(
+                        labels = [LabeledSpan::at(span, "not a u8")],
+                        "priority for task '{name}' must be an unsigned 8-bit integer"
+                    )
+                })
+        })?;
+
         // TODO other package sources
         let workspace_crate = get_unique_string_value(doc, "workspace-crate")?;
         let package_source = workspace_crate.map(|name| {
@@ -348,6 +362,7 @@ pub fn parse_task(
             name: name.to_string(),
             stack_size,
             package_source,
+            priority,
             cargo_features: unique_features.into_iter().collect(),
             default_features,
         })
