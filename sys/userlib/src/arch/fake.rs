@@ -1,4 +1,5 @@
 use crate::{Lease, TaskDeath, TaskId, ResponseCode, RecvMessage};
+use core::mem::MaybeUninit;
 
 pub(crate) fn idle() {
     unimplemented!();
@@ -20,17 +21,17 @@ pub fn sys_send(
 
 
 pub fn sys_recv(
-    _incoming: &mut [u8],
+    _incoming: &mut [MaybeUninit<u8>],
     _notification_mask: u32,
     _from: Option<TaskId>,
-) -> Result<RecvMessage, TaskDeath> {
+) -> Result<RecvMessage<'_>, TaskDeath> {
     unimplemented!()
 }
 
 pub fn sys_recv_open(
-    _incoming: &mut [u8],
+    _incoming: &mut [MaybeUninit<u8>],
     _notification_mask: u32,
-) -> RecvMessage {
+) -> RecvMessage<'_> {
     unimplemented!()
 }
 

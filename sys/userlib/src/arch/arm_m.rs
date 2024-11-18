@@ -1,6 +1,6 @@
 use core::arch::global_asm;
 use core::mem::MaybeUninit;
-use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, ResponseCode, RecvMessage};
+use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage};
 
 pub(crate) fn idle() {
     cortex_m::asm::wfi();
@@ -185,14 +185,14 @@ struct AbiRecvMessage {
 
 #[inline(always)]
 pub fn sys_recv(
-    incoming: &mut [u8],
+    incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
     from: Option<TaskId>,
-) -> Result<RecvMessage, TaskDeath> {
+) -> Result<RecvMessage<'_>, TaskDeath> {
     let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
     let retval = unsafe {
         sys_recv_stub(
-            incoming.as_mut_ptr(),
+            incoming.as_mut_ptr().cast(),
             incoming.len(),
             notification_mask,
             from.map(|tid| 0x8000_0000 | u32::from(tid.0)).unwrap_or(0),
@@ -207,10 +207,20 @@ pub fn sys_recv(
         Err(e)
     } else {
         let rm = unsafe { out.assume_init() };
+        let data = if rm.sent_length <= incoming.len() {
+            unsafe {
+                Ok(core::slice::from_raw_parts_mut(
+                        incoming.as_mut_ptr().cast(),
+                        rm.sent_length,
+                ))
+            }
+        } else {
+            Err(Truncated)
+        };
         Ok(RecvMessage {
             sender: TaskId(rm.sender as u16),
             operation_or_notification: rm.operation_or_notification,
-            sent_length: rm.sent_length,
+            data,
             reply_capacity: rm.reply_capacity,
             lease_count: rm.lease_count,
         })
@@ -219,13 +229,13 @@ pub fn sys_recv(
 
 #[inline(always)]
 pub fn sys_recv_open(
-    incoming: &mut [u8],
+    incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
-) -> RecvMessage {
+) -> RecvMessage<'_> {
     let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
     unsafe {
         sys_recv_stub(
-            incoming.as_mut_ptr(),
+            incoming.as_mut_ptr().cast(),
             incoming.len(),
             notification_mask,
             0,
@@ -236,10 +246,20 @@ pub fn sys_recv_open(
     // Safety: our asm stub is responsible for fully initializing this struct
     // whether we succeed or fail.
     let rm = unsafe { out.assume_init() };
+    let data = if rm.sent_length <= incoming.len() {
+        unsafe {
+            Ok(core::slice::from_raw_parts_mut(
+                incoming.as_mut_ptr().cast(),
+                rm.sent_length,
+            ))
+        }
+    } else {
+        Err(Truncated)
+    };
     RecvMessage {
         sender: TaskId(rm.sender as u16),
         operation_or_notification: rm.operation_or_notification,
-        sent_length: rm.sent_length,
+        data,
         reply_capacity: rm.reply_capacity,
         lease_count: rm.lease_count,
     }

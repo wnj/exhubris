@@ -125,14 +125,17 @@ impl TryFrom<ResponseCode> for TaskDeath {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct RecvMessage {
+#[derive(Debug)]
+pub struct RecvMessage<'a> {
     pub sender: TaskId,
     pub operation_or_notification: u32,
-    pub sent_length: usize,
+    pub data: Result<&'a mut [u8], Truncated>,
     pub reply_capacity: usize,
     pub lease_count: usize,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Truncated;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "no-panic")] {
