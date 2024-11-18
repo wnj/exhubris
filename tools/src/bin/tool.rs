@@ -409,7 +409,7 @@ fn main() -> miette::Result<()> {
             }
 
             let mut cmd = Command::new("cargo");
-            cmd.args(["+nightly-2024-09-17", "build", "--release", "--target", &overall_plan.kernel.target_triple]);
+            cmd.args(["build", "--release", "--target", &overall_plan.kernel.target_triple]);
             cmd.args(["-p", &overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
             cmd.env("RUSTFLAGS",
                 format!(
