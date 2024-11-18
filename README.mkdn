@@ -37,6 +37,9 @@ Currently, the tools in this repo cannot build Oxide's firmware. That will
 probably not change in the foreseeable future, because I've taken the
 opportunity to shed a lot of accumulated cruft. Big changes include:
 
+- I have removed everything that requires the use of a `nightly` Rust toolchain.
+  This code targets the stable 1.82 toolchain (and later).
+
 - Configuration files are no longer TOML, because IMO TOML is pretty crappy for
   complex files containing deep configuration hierarchies. Currently, files are
   written in KDL.
