@@ -25,17 +25,19 @@ pub fn sys_send(
     incoming: &mut [u8],
     leases: &mut [Lease<'_>],
 ) -> Result<(ResponseCode, usize), TaskDeath> {
-    let mut args = SendArgs {
-        target_and_operation: u32::from(target.0) << 16
-            | u32::from(operation),
-        outgoing_base: outgoing.as_ptr(),
-        outgoing_len: outgoing.len(),
-        incoming_base: incoming.as_mut_ptr(),
-        incoming_len: incoming.len(),
-        lease_base: leases.as_mut_ptr().cast(),
-        lease_count: leases.len(),
+    let target_and_operation = u32::from(target.0) << 16
+            | u32::from(operation);
+    let ret64 = unsafe {
+        sys_send_stub2(
+            target_and_operation,
+            outgoing.as_ptr(),
+            outgoing.len(),
+            incoming.as_mut_ptr(),
+            incoming.len(),
+            leases.as_mut_ptr().cast(),
+            leases.len(),
+        )
     };
-    let ret64 = unsafe { sys_send_stub(&mut args) };
     let retval = ResponseCode(ret64 as u32);
     if let Ok(e) = TaskDeath::try_from(retval) {
         Err(e)
