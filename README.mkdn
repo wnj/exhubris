@@ -1,0 +1,107 @@
+# The _ex hubris_ project
+
+This is my attempt at making the [Hubris] kernel/platform accessible to
+applications that live _outside_ the main Hubris repo. (The name is bad Latin
+for "out of Hubris," which is where I want the applications to go, and also an
+abbreviation for "external Hubris.")
+
+**Current Status:** towering stack of hacks.
+
+## Why this is necessary
+
+We developed Hubris at [Oxide] to scratch our own itch: we needed a
+microcontroller operating system with certain robustness properties, and we
+couldn't find anything off-the-shelf that met our needs. Plus, we happened to
+have a bunch of kernel hackers on the team.
+
+Since Hubris grew up with a single main customer (us), we developed Oxide's
+firmware in the Hubris repo. Sort of like traditional Unix systems that package
+their kernel and userland sources in one big morass. This was quick and easy for
+us, and arguably critical for the early stages when things were changing
+rapidly. But it makes it kind of hard for _anyone else_ to use Hubris.
+
+But I would _like_ other people to use Hubris. Heck, I would like to use Hubris
+in some of my personal projects!
+
+## How it's going
+
+This is what I would call "hacked-up sprint code." Expect things to be in flux.
+
+That said, currently the code in this repo can:
+
+- Build a basic application using tasks implemented in this repo.
+- Pull in the upstream Hubris kernel and support crates.
+- Combine the two into a working firmware image.
+
+Currently, the tools in this repo cannot build Oxide's firmware. That will
+probably not change in the foreseeable future, because I've taken the
+opportunity to shed a lot of accumulated cruft. Big changes include:
+
+- Configuration files are no longer TOML, because IMO TOML is pretty crappy for
+  complex files containing deep configuration hierarchies. Currently, files are
+  written in KDL.
+
+- As a result, the names and placement of things in the configuration files may
+  be arbitrarily different.
+
+- The build system strives to be architecture-neutral and 64-bit clean, because
+  it'd be fun to port to a Cortex-A53 or something. (Note that the Hubris kernel
+  is still 32-bit only, so this is purely aspirational.)
+
+- I have rewritten `userlib`, the `libc`-equivalent that tasks use to interact
+  with the Hubris kernel. The new one has some significant breaking API changes,
+  which allowed it to become much smaller and simpler. (I also removed some API
+  footguns.)
+
+- The implementation is incomplete and many features are missing. This is not
+  necessarily deliberate, I'm implementing the features I need to make progress.
+
+## Aspects of Hubris that are not likely to change
+
+I think we got a lot of things right in the Hubris design. Here are some
+properties that I currently don't intend to change.
+
+1. Applications (firmware images) are constructed from a collection of
+   mutually-isolated separately-compiled executables called _tasks_.
+
+2. The set of tasks in an application is defined at design time. Tasks cannot be
+   created or destroyed, only stopped and (re)started.
+
+3. Tasks communicate with one another only via _messages._
+
+4. All tasks are unprivileged (in the hardware sense).
+
+5. One task plays the role of _supervisor,_ which is responsible for handling
+   faults/crashes in other tasks, starting and stopping them, etc. The
+   supervisor has access to some additional syscalls but is otherwise no more
+   powerful than any other task.
+
+6. All drivers are tasks. No driver code runs in the kernel or in privileged
+   mode.
+
+7. The kernel's main jobs are to divide the CPU between tasks, to enforce
+   protection boundaries between tasks (and between the tasks and the kernel
+   itself), to transfer messages between tasks, and to route interrupts to tasks
+   as notifications.
+
+8. The unit of distribution is the _complete firmware image._ Individual tasks
+   cannot be updated in the field, which ensures that you've tested the actual
+   combination of code you're shipping. (We use A/B image slots in flash to
+   handle online updates, accepting a new complete firmware image and then
+   atomically rebooting into it.)
+
+9. Hubris itself is written in Rust, and it is easiest to write Hubris tasks in
+   Rust. It is theoretically possible to write Hubris tasks in other languages,
+   because the kernel ABI is fairly well specified.
+
+Hubris in its currently envisioned form will probably not meet your needs if
+they include:
+
+- Dynamic tasks created or destroyed at runtime, particularly with code
+  downloaded into the live system;
+- Firmware updates to individual tasks rather than the cohesive system;
+- Certain interrupt response situations with very low required latency. (Though
+  we do pretty okay.)
+
+[Hubris]: https://hubris.oxide.computer/
+[Oxide]: https://oxide.computer/
