@@ -110,6 +110,8 @@ fn main() -> miette::Result<()> {
                         println!("building task {name} using cargo install from git");
                         println!("-------------------------------------------");
 
+                        let ctdir = dir1.join(format!("{name}.cargo-target"));
+
                         let tmp_dir = tempdir::TempDir::new("installroot")
                             .into_diagnostic()?;
                         std::fs::copy(
@@ -128,6 +130,7 @@ fn main() -> miette::Result<()> {
                         cmd.args(["--no-track", "--root"]);
                         cmd.arg(tmp_dir.path());
 
+                        cmd.env("CARGO_TARGET_DIR", ctdir);
                         cmd.env(
                             "RUSTFLAGS",
                             format!("-C link-arg=-Ttask-rlink.x -C link-arg=-r \
