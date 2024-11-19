@@ -78,6 +78,8 @@ pub struct TaskDef {
 
     pub cargo_features: BTreeMap<String, SourceSpan>,
     pub default_features: bool,
+    pub toolchain: Option<Spanned<String>>,
+    pub target: Option<Spanned<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -88,12 +90,19 @@ pub struct KernelDef {
 
     pub cargo_features: BTreeMap<String, SourceSpan>,
     pub default_features: bool,
+    pub toolchain: Option<Spanned<String>>,
+    pub target: Option<Spanned<String>>,
 }
 
 #[derive(Clone, Debug)]
 pub enum PackageSource {
     WorkspaceCrate {
         name: String,
+    },
+    GitCrate {
+        repo: String,
+        name: String,
+        rev: String,
     },
 }
 
@@ -334,11 +343,34 @@ pub fn parse_task(
                 })
         })?;
 
-        // TODO other package sources
-        let workspace_crate = get_unique_string_value(doc, "workspace-crate")?;
-        let package_source = workspace_crate.map(|name| {
-            PackageSource::WorkspaceCrate { name }
-        });
+        let package_source = {
+            let workspace_crate = get_unique_optional_string_value(doc, "workspace-crate")?;
+            let git = get_unique_optional_child(doc, "git-crate")?;
+
+            match (workspace_crate, git) {
+                (Some(name), None) => name.map(|n| PackageSource::WorkspaceCrate { name: n }),
+                (None, Some(gitatts)) => {
+                    let c = required_children(gitatts)?;
+                    let repo = get_unique_string_value(c, "repo")?.into_value();
+                    let name = get_unique_string_value(c, "package")?.into_value();
+                    let rev = get_unique_string_value(c, "rev")?.into_value();
+                    Spanned::new(
+                        PackageSource::GitCrate { repo, name, rev, },
+                        *gitatts.span(),
+                    )
+                }
+                (Some(a), Some(b)) => bail!(
+                    labels=[
+                        LabeledSpan::at(a.span(), "here"),
+                        LabeledSpan::at(*b.span(), "also here"),
+                    ],
+                    "too many crate specs for task",
+                ),
+                (None, None) => bail!(
+                    "missing crate spec for task",
+                ),
+            }
+        };
 
         let cargo_features = get_unique_optional_string_array(doc, "features")?;
 
@@ -358,6 +390,9 @@ pub fn parse_task(
         }
 
         let default_features = !get_unique_bool(doc, "no-default-features")?;
+
+        let toolchain = get_unique_optional_string_value(doc, "toolchain")?;
+        let target = get_unique_optional_string_value(doc, "target")?;
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
@@ -365,6 +400,8 @@ pub fn parse_task(
             priority,
             cargo_features: unique_features.into_iter().collect(),
             default_features,
+            toolchain,
+            target,
         })
     })
 }
@@ -385,11 +422,25 @@ pub fn parse_kernel(
                 })
         })?;
        
-        // TODO other package sources
-        let workspace_crate = get_unique_string_value(doc, "workspace-crate")?;
-        let package_source = workspace_crate.map(|name| {
-            PackageSource::WorkspaceCrate { name }
-        });
+        let package_source = {
+            let workspace_crate = get_unique_optional_string_value(doc, "workspace-crate")?;
+            let git = get_unique_optional_child(doc, "git-crate")?;
+
+            match (workspace_crate, git) {
+                (Some(name), None) => name.map(|n| PackageSource::WorkspaceCrate { name: n }),
+                (None, Some(gitatts)) => todo!(),
+                (Some(a), Some(b)) => bail!(
+                    labels=[
+                        LabeledSpan::at(a.span(), "here"),
+                        LabeledSpan::at(*b.span(), "also here"),
+                    ],
+                    "too many crate specs for kernel",
+                ),
+                (None, None) => bail!(
+                    "missing crate spec for kernel",
+                ),
+            }
+        };
 
         let cargo_features = get_unique_optional_string_array(doc, "features")?;
 
@@ -409,11 +460,16 @@ pub fn parse_kernel(
         }
 
         let default_features = !get_unique_bool(doc, "no-default-features")?;
+        let toolchain = get_unique_optional_string_value(doc, "toolchain")?;
+        let target = get_unique_optional_string_value(doc, "target")?;
+
         Ok(KernelDef {
             stack_size,
             package_source,
             cargo_features: unique_features.into_iter().collect(),
             default_features,
+            toolchain,
+            target,
         })
     })
 }
@@ -558,6 +614,19 @@ fn get_unique_optional_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Re
         }
     }
 }
+
+fn get_unique_optional_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Option<Spanned<String>>> {
+    let Some(value) = get_unique_optional_value(doc, name)? else {
+        return Ok(None);
+    };
+    Ok(Some(value.try_map_with_span(|v, span| v.as_string().ok_or_else(|| {
+        miette!(
+            labels = [LabeledSpan::at(span, "not a string")],
+            "value for {name} must be a string"
+        )
+    }))?.map(|s| s.to_string())))
+}
+
 
 fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Result<Vec<Spanned<String>>> {
     let Some(child) = get_unique_optional_child(doc, name)? else {
@@ -815,6 +884,7 @@ pub struct CheckedCfg {
 
 #[derive(Clone, Debug)]
 pub struct BuildPlan {
+    pub method: BuildMethod,
     /// Name of package from Cargo's perspective.
     pub package_name: String,
     /// Name of bin target within the package. In most cases, this is the same
@@ -822,6 +892,8 @@ pub struct BuildPlan {
     pub bin_name: String,
     /// Target triple to build for.
     pub target_triple: String,
+    /// Toolchain to use, if overridden.
+    pub toolchain_override: Option<String>,
     /// Cargo features to enable. This list is not comprehensive if the crate
     /// lists default features.
     pub cargo_features: BTreeSet<String>,
@@ -833,6 +905,15 @@ pub struct BuildPlan {
     pub smuggled_env: BTreeMap<String, String>,
     /// Any extra rustflags.
     pub rustflags: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum BuildMethod {
+    CargoWorkspaceBuild,
+    CargoInstallGit {
+        repo: String,
+        rev: String,
+    },
 }
 
 pub struct BuildPlans {
@@ -860,9 +941,11 @@ pub fn plan_build(
     // Attempt to locate the cargo package for each task.
     let mut task_plans = IndexMap::new();
     for (name, task) in &app.tasks {
-        let package = match task.package_source.value() {
+        let target_triple = task.target.as_ref()
+            .unwrap_or(&app.board.chip.target_triple);
+        let plan = match task.package_source.value() {
             PackageSource::WorkspaceCrate { name } => {
-                binmap.get(&(name, name))
+                let package = binmap.get(&(name, name))
                     .ok_or_else(|| {
                         miette!(
                             labels = [LabeledSpan::at(
@@ -871,36 +954,56 @@ pub fn plan_build(
                             )],
                             "can't find package/binary '{name}'"
                         )
-                    })?
-            }
-        };
-        let missing_features = task.cargo_features.iter()
-            .filter(|(f, _)| !package.features.contains_key(*f))
-            .map(|(_, s)| LabeledSpan::at(*s, "unknown feature"))
-            .collect::<Vec<_>>();
-        if !missing_features.is_empty() {
-            return Err(miette!(
-                labels = missing_features,
-                "task {name} refers to undefined Cargo features"
-            ).with_source_code(app.source.clone()));
-        }
+                    })?;
+                let missing_features = task.cargo_features.iter()
+                    .filter(|(f, _)| !package.features.contains_key(*f))
+                    .map(|(_, s)| LabeledSpan::at(*s, "unknown feature"))
+                    .collect::<Vec<_>>();
+                if !missing_features.is_empty() {
+                    return Err(miette!(
+                            labels = missing_features,
+                            "task {name} refers to undefined Cargo features"
+                    ).with_source_code(app.source.clone()));
+                }
 
-        let plan = BuildPlan {
-            package_name: package.name.clone(),
-            bin_name: package.name.clone(),
-            target_triple: app.board.chip.target_triple.value().clone(),
-            cargo_features: task.cargo_features.keys().cloned().collect(),
-            default_features: task.default_features,
-            smuggled_env: Default::default(), // TODO
-            rustflags: Default::default(), // TODO
+                BuildPlan {
+                    method: BuildMethod::CargoWorkspaceBuild,
+                    package_name: package.name.clone(),
+                    bin_name: package.name.clone(),
+                    target_triple: target_triple.value().clone(),
+                    toolchain_override: task.toolchain.as_ref().map(|s| s.value().clone()),
+                    cargo_features: task.cargo_features.keys().cloned().collect(),
+                    default_features: task.default_features,
+                    smuggled_env: Default::default(), // TODO
+                    rustflags: Default::default(), // TODO
+                }
+            }
+            PackageSource::GitCrate { repo, name, rev } => {
+                BuildPlan {
+                    method: BuildMethod::CargoInstallGit {
+                        repo: repo.clone(),
+                        rev: rev.clone(),
+                    },
+                    package_name: name.clone(),
+                    bin_name: name.clone(),
+                    target_triple: target_triple.value().clone(),
+                    toolchain_override: task.toolchain.as_ref().map(|s| s.value().clone()),
+                    cargo_features: task.cargo_features.keys().cloned().collect(),
+                    default_features: task.default_features,
+                    smuggled_env: Default::default(), // TODO
+                    rustflags: Default::default(), // TODO
+                }
+            }
         };
         task_plans.insert(name.clone(), plan);
     }
     // aaaand the kernel
     let kernel = {
-        let package = match app.kernel.package_source.value() {
+        let target_triple = app.kernel.target.as_ref()
+            .unwrap_or(&app.board.chip.target_triple);
+        match app.kernel.package_source.value() {
             PackageSource::WorkspaceCrate { name } => {
-                binmap.get(&(name, name))
+                let package = binmap.get(&(name, name))
                     .ok_or_else(|| {
                         miette!(
                             labels = [LabeledSpan::at(
@@ -909,28 +1012,46 @@ pub fn plan_build(
                             )],
                             "can't find package/binary '{name}'"
                         )
-                    })?
-            }
-        };
-        let missing_features = app.kernel.cargo_features.iter()
-            .filter(|(f, _)| !package.features.contains_key(*f))
-            .map(|(_, s)| LabeledSpan::at(*s, "unknown feature"))
-            .collect::<Vec<_>>();
-        if !missing_features.is_empty() {
-            return Err(miette!(
-                labels = missing_features,
-                "kernel refers to undefined Cargo features"
-            ).with_source_code(app.source.clone()));
-        }
+                    })?;
+                let missing_features = app.kernel.cargo_features.iter()
+                    .filter(|(f, _)| !package.features.contains_key(*f))
+                    .map(|(_, s)| LabeledSpan::at(*s, "unknown feature"))
+                    .collect::<Vec<_>>();
+                if !missing_features.is_empty() {
+                    return Err(miette!(
+                            labels = missing_features,
+                            "kernel refers to undefined Cargo features"
+                    ).with_source_code(app.source.clone()));
+                }
 
-        BuildPlan {
-            package_name: package.name.clone(),
-            bin_name: package.name.clone(),
-            target_triple: app.board.chip.target_triple.value().clone(),
-            cargo_features: app.kernel.cargo_features.keys().cloned().collect(),
-            default_features: app.kernel.default_features,
-            smuggled_env: Default::default(), // TODO
-            rustflags: Default::default(), // TODO
+                BuildPlan {
+                    method: BuildMethod::CargoWorkspaceBuild,
+                    package_name: package.name.clone(),
+                    bin_name: package.name.clone(),
+                    target_triple: target_triple.value().clone(),
+                    toolchain_override: app.kernel.toolchain.as_ref().map(|s| s.value().clone()),
+                    cargo_features: app.kernel.cargo_features.keys().cloned().collect(),
+                    default_features: app.kernel.default_features,
+                    smuggled_env: Default::default(), // TODO
+                    rustflags: Default::default(), // TODO
+                }
+            }
+            PackageSource::GitCrate { repo, name, rev } => {
+                BuildPlan {
+                    method: BuildMethod::CargoInstallGit {
+                        repo: repo.clone(),
+                        rev: rev.clone(),
+                    },
+                    package_name: name.clone(),
+                    bin_name: name.clone(),
+                    toolchain_override: app.kernel.toolchain.as_ref().map(|s| s.value().clone()),
+                    target_triple: target_triple.value().clone(),
+                    cargo_features: app.kernel.cargo_features.keys().cloned().collect(),
+                    default_features: app.kernel.default_features,
+                    smuggled_env: Default::default(), // TODO
+                    rustflags: Default::default(), // TODO
+                }
+            }
         }
     };
     

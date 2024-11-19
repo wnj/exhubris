@@ -20,3 +20,4 @@ hubris-build-kconfig = {package = "build-kconfig", git = "https://github.com/cbi
 ron = "0.8.1"
 rangemap = "1.5.1"
 ihex = "3.0.0"
+tempdir = "0.3.7"

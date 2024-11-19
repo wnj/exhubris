@@ -9,7 +9,7 @@ use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{diagnostic, miette, Context as _, IntoDiagnostic as _, LabeledSpan, NamedSource, Report, SourceSpan};
 use rangemap::RangeMap;
 use size::Size;
-use tools::appcfg::{KernelDef, RegionDef};
+use tools::appcfg::{BuildMethod, KernelDef, RegionDef};
 
 use hubris_build_kconfig as kconfig;
 
@@ -79,25 +79,71 @@ fn main() -> miette::Result<()> {
             let dir1 = workdir.join("build");
             maybe_create_dir(&dir1).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
-                println!("-------------------------------------------");
-                println!("building task {name} using Cargo");
-                println!("-------------------------------------------");
-                let mut target = targetroot.join(&plan.target_triple);
-                target.push("release");
+                match &plan.method {
+                    BuildMethod::CargoWorkspaceBuild => {
+                        println!("-------------------------------------------");
+                        println!("building task {name} from workspace package {}",
+                            plan.package_name);
+                        println!("-------------------------------------------");
+                        let mut target = targetroot.join(&plan.target_triple);
+                        target.push("release");
 
-                let mut cmd = Command::new("cargo");
-                cmd.args(["build", "--release", "--target", &plan.target_triple]);
-                cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
-                cmd.env("RUSTFLAGS",
-                    "-C link-arg=-Ttask-rlink.x -C link-arg=-r");
-                let status = cmd.status().into_diagnostic()?;
-                if !status.success() {
-                    return Err(miette!("failed to build task {name}, see output"));
+                        let mut cmd = Command::new("cargo");
+                        if let Some(tc) = &plan.toolchain_override {
+                            cmd.arg(format!("+{tc}"));
+                        }
+                        cmd.args(["build", "--release", "--target", &plan.target_triple]);
+                        cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
+                        cmd.env("RUSTFLAGS",
+                            "-C link-arg=-Ttask-rlink.x -C link-arg=-r");
+                        let status = cmd.status().into_diagnostic()?;
+                        if !status.success() {
+                            return Err(miette!("failed to build task {name}, see output"));
+                        }
+
+                        let binpath = target.join(&plan.bin_name);
+                        let outpath = dir1.join(name);
+                        std::fs::copy(&binpath, &outpath).into_diagnostic()?;
+                    }
+                    BuildMethod::CargoInstallGit { repo, rev } => {
+                        println!("-------------------------------------------");
+                        println!("building task {name} using cargo install from git");
+                        println!("-------------------------------------------");
+
+                        let tmp_dir = tempdir::TempDir::new("installroot")
+                            .into_diagnostic()?;
+                        std::fs::copy(
+                            root.join("task-rlink.x"),
+                            tmp_dir.path().join("task-rlink.x"),
+                        ).into_diagnostic()?;
+
+                        let mut cmd = Command::new("cargo");
+                        if let Some(tc) = &plan.toolchain_override {
+                            cmd.arg(format!("+{tc}"));
+                        }
+                        cmd.args(["install", "--locked", "--target", &plan.target_triple]);
+                        cmd.args([&plan.package_name, "--bin", &plan.bin_name]);
+                        cmd.args(["--git", repo]);
+                        cmd.args(["--rev", rev]);
+                        cmd.args(["--no-track", "--root"]);
+                        cmd.arg(tmp_dir.path());
+
+                        cmd.env(
+                            "RUSTFLAGS",
+                            format!("-C link-arg=-Ttask-rlink.x -C link-arg=-r \
+                                    -C link-arg=-L{}",
+                                    tmp_dir.path().display())
+                        );
+                        let status = cmd.status().into_diagnostic()?;
+                        if !status.success() {
+                            return Err(miette!("failed to build task {name}, see output"));
+                        }
+
+                        let binpath = tmp_dir.path().join("bin").join(&plan.bin_name);
+                        let outpath = dir1.join(name);
+                        std::fs::copy(&binpath, &outpath).into_diagnostic()?;
+                    }
                 }
-
-                let binpath = target.join(&plan.bin_name);
-                let outpath = dir1.join(&name);
-                std::fs::copy(&binpath, &outpath).into_diagnostic()?;
             }
 
             println!("-------------------------------------------");
@@ -373,67 +419,144 @@ fn main() -> miette::Result<()> {
                 ron::ser::PrettyConfig::new().enumerate_arrays(true).struct_names(true),
             ).into_diagnostic()?;
 
-            println!("-------------------------------------------");
-            println!("building kernel using Cargo");
-            println!("-------------------------------------------");
-            let mut target = targetroot.join(&overall_plan.kernel.target_triple);
-            target.push("release");
+            match &overall_plan.kernel.method {
+                BuildMethod::CargoWorkspaceBuild => {
+                    println!("-------------------------------------------");
+                    println!("building kernel using Cargo");
+                    println!("-------------------------------------------");
+                    let mut target = targetroot.join(&overall_plan.kernel.target_triple);
+                    target.push("release");
 
-            {
-                let linker_script_path = targetroot.join("memory.x");
-                let mut scr = std::fs::File::create(&linker_script_path)
-                    .into_diagnostic()?;
-                writeln!(scr, "MEMORY {{").into_diagnostic()?;
+                    {
+                        let linker_script_path = targetroot.join("memory.x");
+                        let mut scr = std::fs::File::create(&linker_script_path)
+                            .into_diagnostic()?;
+                        writeln!(scr, "MEMORY {{").into_diagnostic()?;
 
-                writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
-                    allocs.kernel.stack.start(),
-                    (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
-                ).into_diagnostic()?;
+                        writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
+                        allocs.kernel.stack.start(),
+                        (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
+                        ).into_diagnostic()?;
 
-                for orig_name in app.board.chip.memory.keys() {
-                    let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
-                        continue;
-                    };
+                        for orig_name in app.board.chip.memory.keys() {
+                            let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
+                                continue;
+                            };
 
-                    let name = orig_name.to_ascii_uppercase();
-                    let base = *regalloc.start();
-                    let size = (regalloc.end() - regalloc.start()) + 1;
+                            let name = orig_name.to_ascii_uppercase();
+                            let base = *regalloc.start();
+                            let size = (regalloc.end() - regalloc.start()) + 1;
 
-                    writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
+                            writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
+                        }
+                        writeln!(scr, "}}").into_diagnostic()?;
+
+                        // TODO these values are hardcoded
+                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
+                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
+                    }
+
+                    let mut cmd = Command::new("cargo");
+                    if let Some(tc) = &overall_plan.kernel.toolchain_override {
+                        cmd.arg(format!("+{tc}"));
+                    }
+                    cmd.args(["build", "--release", "--target", &overall_plan.kernel.target_triple]);
+                    cmd.args(["-p", &overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
+                    cmd.env("RUSTFLAGS",
+                        format!(
+                            "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
+                            targetroot.display()
+                        )
+                    );
+                    cmd.env(
+                        "HUBRIS_KCONFIG",
+                        &ron::ser::to_string(&kconfig).into_diagnostic()?,
+                    );
+                    cmd.env(
+                        "HUBRIS_IMAGE_ID",
+                        "12345678",
+                    );
+
+                    let status = cmd.status().into_diagnostic()?;
+                    if !status.success() {
+                        return Err(miette!("failed to build kernel, see output"));
+                    }
+
+                    let binpath = target.join(&overall_plan.kernel.bin_name);
+                    let outpath = dir3.join("kernel");
+                    std::fs::copy(&binpath, &outpath).into_diagnostic()?;
                 }
-                writeln!(scr, "}}").into_diagnostic()?;
+                BuildMethod::CargoInstallGit { repo, rev } => {
+                    println!("-------------------------------------------");
+                    println!("building kernel using Cargo");
+                    println!("-------------------------------------------");
+                    let tmp_dir = tempdir::TempDir::new("installroot")
+                        .into_diagnostic()?;
 
-                // TODO these values are hardcoded
-                writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
-                writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
+                    {
+                        let linker_script_path = tmp_dir.path().join("memory.x");
+                        let mut scr = std::fs::File::create(&linker_script_path)
+                            .into_diagnostic()?;
+                        writeln!(scr, "MEMORY {{").into_diagnostic()?;
+
+                        writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
+                            allocs.kernel.stack.start(),
+                            (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
+                            ).into_diagnostic()?;
+
+                        for orig_name in app.board.chip.memory.keys() {
+                            let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
+                                continue;
+                            };
+
+                            let name = orig_name.to_ascii_uppercase();
+                            let base = *regalloc.start();
+                            let size = (regalloc.end() - regalloc.start()) + 1;
+
+                            writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
+                        }
+                        writeln!(scr, "}}").into_diagnostic()?;
+
+                        // TODO these values are hardcoded
+                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
+                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
+                    }
+
+                    let mut cmd = Command::new("cargo");
+                    if let Some(tc) = &overall_plan.kernel.toolchain_override {
+                        cmd.arg(format!("+{tc}"));
+                    }
+                    cmd.args(["install", "--locked", "--target", &overall_plan.kernel.target_triple]);
+                    cmd.args([&overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
+                    cmd.args(["--git", repo, "--rev", rev]);
+                    cmd.args(["--no-track", "--root"]);
+                    cmd.arg(tmp_dir.path());
+
+                    cmd.env("RUSTFLAGS",
+                        format!(
+                            "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
+                            tmp_dir.path().display()
+                        )
+                    );
+                    cmd.env(
+                        "HUBRIS_KCONFIG",
+                        &ron::ser::to_string(&kconfig).into_diagnostic()?,
+                    );
+                    cmd.env(
+                        "HUBRIS_IMAGE_ID",
+                        "12345678",
+                    );
+
+                    let status = cmd.status().into_diagnostic()?;
+                    if !status.success() {
+                        return Err(miette!("failed to build kernel, see output"));
+                    }
+
+                    let binpath = tmp_dir.path().join(&overall_plan.kernel.bin_name);
+                    let outpath = dir3.join("kernel");
+                    std::fs::copy(&binpath, &outpath).into_diagnostic()?;
+                }
             }
-
-            let mut cmd = Command::new("cargo");
-            cmd.args(["build", "--release", "--target", &overall_plan.kernel.target_triple]);
-            cmd.args(["-p", &overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
-            cmd.env("RUSTFLAGS",
-                format!(
-                    "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
-                    targetroot.display()
-                )
-            );
-            cmd.env(
-                "HUBRIS_KCONFIG",
-                &ron::ser::to_string(&kconfig).into_diagnostic()?,
-            );
-            cmd.env(
-                "HUBRIS_IMAGE_ID",
-                "12345678",
-            );
-
-            let status = cmd.status().into_diagnostic()?;
-            if !status.success() {
-                return Err(miette!("failed to build kernel, see output"));
-            }
-
-            let binpath = target.join(&overall_plan.kernel.bin_name);
-            let outpath = dir3.join("kernel");
-            std::fs::copy(&binpath, &outpath).into_diagnostic()?;
 
             Ok(())
         }
