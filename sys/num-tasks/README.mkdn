@@ -1,0 +1,8 @@
+# `hubris-num-tasks`
+
+This trivial crate lets a Hubris task determine the number of tasks in the
+application, as a compile-time constant.
+
+Note that depending on this crate will cause your code to get rebuilt if the set
+of tasks in the application changes, including changes that don't alter the
+count.

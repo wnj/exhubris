@@ -46,30 +46,6 @@ pub fn sys_send(
     }
 }
 
-#[inline(always)]
-pub fn sys_send_to_kernel(
-    operation: u16,
-    outgoing: &[u8],
-    incoming: &mut [u8],
-    leases: &mut [Lease<'_>],
-) -> (ResponseCode, usize) {
-    let target_and_operation = u32::from(TaskId::KERNEL.0) << 16
-            | u32::from(operation);
-    let ret64 = unsafe {
-        sys_send_stub2(
-            target_and_operation,
-            outgoing.as_ptr(),
-            outgoing.len(),
-            incoming.as_mut_ptr(),
-            incoming.len(),
-            leases.as_mut_ptr().cast(),
-            leases.len(),
-        )
-    };
-    let retval = ResponseCode(ret64 as u32);
-    (retval, (ret64 >> 32) as usize)
-}
-
 global_asm!("
 .section .text.sys_send_stub
 .globl sys_send_stub
@@ -140,13 +116,12 @@ sys_send_stub2:
     @ of eight.
 
     @ Stash the register values we're about to destroy.
-    push {{r4-r7, lr}}
-    .cfi_adjust_cfa_offset 20
-    .cfi_offset r4, -20
-    .cfi_offset r5, -16
-    .cfi_offset r6, -12
-    .cfi_offset r7, -8
-    .cfi_offset lr, -4
+    push {{r4-r7}}
+    .cfi_adjust_cfa_offset 16
+    .cfi_offset r4, -16
+    .cfi_offset r5, -12
+    .cfi_offset r6, -8
+    .cfi_offset r7, -4
 
     mov r4, r8
     mov r5, r9
@@ -154,10 +129,10 @@ sys_send_stub2:
     mov r7, r11
     push {{r4-r7}}
     .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -36
-    .cfi_offset r5, -32
-    .cfi_offset r6, -28
-    .cfi_offset r7, -24
+    .cfi_offset r4, -32
+    .cfi_offset r5, -28
+    .cfi_offset r6, -24
+    .cfi_offset r7, -20
     
     @ Materialize the sysnum constant. For Thumb Reasons this has to go through
     @ r4 on the way, so we do this while we still have a bunch of temp registers
@@ -165,9 +140,9 @@ sys_send_stub2:
     movs r4, #{sysnum}
     mov r11, r4
 
-    @ Load the three operands from the stack. We've pushed nine words onto
+    @ Load the three operands from the stack. We've pushed eight words onto
     @ the stack, so we need to address _past_ that.
-    add r4, sp, #(9 * 4)
+    add r4, sp, #(8 * 4)
     ldm r4, {{r4-r6}}
     mov r8, r4
     mov r9, r5
@@ -191,7 +166,8 @@ sys_send_stub2:
     mov r9, r5
     mov r10, r6
     mov r11, r7
-    pop {{r4-r7, pc}}
+    pop {{r4-r7}}
+    bx lr
 
     .cfi_endproc
 ",

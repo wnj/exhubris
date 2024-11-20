@@ -19,15 +19,6 @@ pub fn sys_send(
     unimplemented!()
 }
 
-pub fn sys_send_to_kernel(
-    _operation: u16,
-    _outgoing: &[u8],
-    _incoming: &mut [u8],
-    _leases: &mut [Lease<'_>],
-) -> (ResponseCode, usize) {
-    unimplemented!()
-}
-
 
 pub fn sys_recv(
     _incoming: &mut [MaybeUninit<u8>],

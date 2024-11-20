@@ -76,6 +76,8 @@ fn main() -> miette::Result<()> {
             let workdir = root.join(".work").join(app.name.value());
             maybe_create_dir(&workdir).into_diagnostic()?;
 
+            let tasknames = itertools::join(overall_plan.tasks.keys(), ",");
+
             let dir1 = workdir.join("build");
             maybe_create_dir(&dir1).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
@@ -96,6 +98,7 @@ fn main() -> miette::Result<()> {
                         cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
                         cmd.env("RUSTFLAGS",
                             "-C link-arg=-Ttask-rlink.x -C link-arg=-r");
+                        cmd.env("HUBRIS_TASKS", &tasknames);
                         let status = cmd.status().into_diagnostic()?;
                         if !status.success() {
                             return Err(miette!("failed to build task {name}, see output"));
@@ -131,6 +134,7 @@ fn main() -> miette::Result<()> {
                         cmd.arg(tmp_dir.path());
 
                         cmd.env("CARGO_TARGET_DIR", ctdir);
+                        cmd.env("HUBRIS_TASKS", &tasknames);
                         cmd.env(
                             "RUSTFLAGS",
                             format!("-C link-arg=-Ttask-rlink.x -C link-arg=-r \

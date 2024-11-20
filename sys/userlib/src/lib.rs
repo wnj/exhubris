@@ -88,6 +88,9 @@ pub use self::arch::sys_panic;
 pub use self::arch::sys_send;
 
 #[doc(inline)]
+pub use self::arch::sys_send_to_kernel;
+
+#[doc(inline)]
 pub use self::arch::sys_recv;
 
 #[doc(inline)]

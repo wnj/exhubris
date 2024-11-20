@@ -1,9 +1,11 @@
 [workspace]
 resolver = "2"
-members = [ "kernel-generic-stm32g031","sys/userlib", "task/idle", "task/ping", "task/pong", "tools"]
+members = [ "kernel-generic-stm32g031","sys/userlib", "task/idle", "task/minisuper", "task/ping", "task/pong", "tools", "sys/kipc", "sys/num-tasks"]
 
 [workspace.dependencies]
 userlib = {path = "sys/userlib"}
+kipc = {path = "sys/kipc"}
+hubris-num-tasks = {path = "sys/num-tasks"}
 
 [profile.release]
 debug = true

@@ -1,0 +1,3 @@
+# `kipc` interface stubs
+
+This crate provides stubs for the kernel's `kipc` interface for the supervisor.
