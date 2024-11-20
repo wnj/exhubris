@@ -293,6 +293,7 @@ fn main() -> miette::Result<()> {
             println!("-------------------------------------------");
             std::fs::copy(root.join("task-link3.x"), targetroot.join("task-link3.x")).into_diagnostic()?;
             let dir3 = workdir.join("final");
+            std::fs::remove_dir_all(&dir3).into_diagnostic()?;
             maybe_create_dir(&dir3).into_diagnostic()?;
             let mut built_tasks = vec![];
             for (taskname, plan) in &overall_plan.tasks {
