@@ -1,6 +1,6 @@
 use core::arch::global_asm;
 use core::mem::MaybeUninit;
-use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage};
+use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings};
 
 pub(crate) fn idle() {
     cortex_m::asm::wfi();
@@ -265,6 +265,28 @@ pub fn sys_recv_open(
     }
 }
 
+#[inline(always)]
+pub fn sys_recv_notification(
+    notification_mask: u32,
+) -> u32 {
+    let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
+    let retval = unsafe {
+        sys_recv_stub(
+            core::ptr::null_mut(),
+            0,
+            notification_mask,
+            0x8000_0000 | u32::from(TaskId::KERNEL.0),
+            out.as_mut_ptr(),
+        )
+    };
+
+    // This can't actually fail.
+    let _ = retval;
+
+    let rm = unsafe { out.assume_init() };
+    rm.operation_or_notification
+}
+
 global_asm!("
 .section .text.sys_recv_stub
 .globl sys_recv_stub
@@ -471,6 +493,146 @@ cfg_if::cfg_if! {
     }
 }
 
+global_asm!("
+.section .text.sys_set_timer_stub
+.globl sys_set_timer_stub
+.type sys_set_timer_stub,function
+sys_set_timer_stub:
+    .cfi_startproc
+
+    @ Stash the register values we're about to destroy.
+    push {{r4-r7}}
+    .cfi_adjust_cfa_offset 16
+    .cfi_offset r4, -16
+    .cfi_offset r5, -12
+    .cfi_offset r6, -8
+    .cfi_offset r7, -4
+
+    mov r4, r11
+    push {{r4}}
+    .cfi_adjust_cfa_offset 4
+    .cfi_offset r11, -20
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments 0-3 into the correct registers.
+    mov r4, r0
+    mov r5, r1
+    mov r6, r2
+    mov r7, r3
+
+    svc #0
+
+    @ Restore the registers.
+    pop {{r4}}
+    .cfi_adjust_cfa_offset -4
+    mov r11, r4
+    pop {{r4-r7}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::SetTimer as u32,
+);
+
+pub fn sys_set_timer(
+    deadline: Option<u64>,
+    notifications: u32,
+) {
+    let raw_deadline = deadline.unwrap_or(0);
+    unsafe {
+        sys_set_timer_stub(
+            deadline.is_some() as u32,
+            raw_deadline as u32,
+            (raw_deadline >> 32) as u32,
+            notifications,
+        )
+    }
+}
+
+#[repr(C)]
+struct AbiTimerSettings {
+    now: [u32; 2],
+    deadline_set: u32,
+    deadline: [u32; 2],
+    notification: u32,
+}
+
+#[inline(always)]
+pub fn sys_get_timer() -> TimerSettings {
+    let out = unsafe {
+        sys_get_timer_stub()
+    };
+
+    TimerSettings {
+        now: u64::from(out.now[0]) | u64::from(out.now[1]) << 32,
+        alarm: if out.deadline_set != 0 {
+            Some((
+                u64::from(out.deadline[0]) | u64::from(out.deadline[1]) << 32,
+                out.notification,
+            ))
+        } else {
+            None
+        },
+    }
+}
+
+
+global_asm!("
+.section .text.sys_get_timer_stub
+.globl sys_get_timer_stub
+.type sys_get_timer_stub,function
+sys_get_timer_stub:
+    .cfi_startproc
+
+    @ Stash the register values that will be destroyed by the returned data.
+    push {{r4-r7}}
+    .cfi_adjust_cfa_offset 16
+    .cfi_offset r4, -16
+    .cfi_offset r5, -12
+    .cfi_offset r6, -8
+    .cfi_offset r7, -4
+
+    mov r4, r8
+    mov r5, r9
+    mov r6, r11
+    push {{r4-r6}}
+    .cfi_adjust_cfa_offset 12
+    .cfi_offset r8, -28
+    .cfi_offset r9, -24
+    .cfi_offset r11, -20
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    svc #0
+
+    @ Copy outputs into the return struct.
+    stm r0!, {{r4-r7}}
+    mov r4, r8
+    mov r5, r9
+    stm r0!, {{r4-r5}}
+
+    @ Restore the registers.
+    pop {{r4-r6}}
+    .cfi_adjust_cfa_offset -12
+    mov r8, r4
+    mov r9, r5
+    mov r11, r6
+    pop {{r4-r7}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::GetTimer as u32,
+);
+
+
 extern "C" {
     /// # Safety
     ///
@@ -511,6 +673,15 @@ extern "C" {
     /// perspective. They will not be dereferenced in this lifetime. They're
     /// just sent to the kernel. But, it's a good idea to use valid pointers.
     fn sys_panic_stub(_msg: *const u8, _len: usize) -> !;
+
+    fn sys_set_timer_stub(
+        enable: u32,
+        raw_deadline_lo: u32,
+        raw_deadline_hi: u32,
+        notifications: u32,
+    );
+
+    fn sys_get_timer_stub() -> AbiTimerSettings;
 
     pub fn _start() -> !;
 }

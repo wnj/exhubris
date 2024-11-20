@@ -25,7 +25,26 @@ fn main() -> ! {
     // We don't lease any memory.
     let mut leases = [];
 
+    // Record the current time so we can start our delay loop properly.
+    let mut next_send = userlib::sys_get_timer().now;
+
+    const INTERVAL: u64 = 5;
+
     loop {
+        userlib::sys_set_timer(Some(next_send), 1);
+
+        // The proper thing to do, when waiting for a timer, is to sleep waiting
+        // for notifications _and then check the time._ Otherwise other tasks
+        // can wake you up by posting.
+        loop {
+            userlib::sys_recv_notification(1);
+            let now = userlib::sys_get_timer().now;
+            if now >= next_send {
+                next_send += INTERVAL;
+                break;
+            }
+        }
+
         let r = userlib::sys_send(
             pong,
             ping_op,

@@ -1,4 +1,4 @@
-use crate::{Lease, TaskDeath, TaskId, ResponseCode, RecvMessage};
+use crate::{Lease, RecvMessage, ResponseCode, TaskDeath, TaskId, TimerSettings};
 use core::mem::MaybeUninit;
 
 pub(crate) fn idle() {
@@ -35,6 +35,12 @@ pub fn sys_recv_open(
     unimplemented!()
 }
 
+pub fn sys_recv_notification(
+    _notification_mask: u32,
+) -> u32 {
+    unimplemented!()
+}
+
 pub fn sys_reply(
     _sender: TaskId,
     _code: ResponseCode,
@@ -43,3 +49,13 @@ pub fn sys_reply(
     unimplemented!()
 }
 
+pub fn sys_set_timer(
+    _deadline: Option<u64>,
+    _bitmask: u32,
+) {
+    unimplemented!()
+}
+
+pub fn sys_get_timer() -> TimerSettings {
+    unimplemented!()
+}

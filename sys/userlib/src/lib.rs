@@ -5,7 +5,9 @@ pub enum Sysnum {
     Send = 0,
     Recv = 1,
     Reply = 2,
+    SetTimer = 3,
     Panic = 8,
+    GetTimer = 9,
 }
 
 pub const GEN_BITS: u32 = 6;
@@ -91,7 +93,16 @@ pub use self::arch::sys_recv;
 pub use self::arch::sys_recv_open;
 
 #[doc(inline)]
+pub use self::arch::sys_recv_notification;
+
+#[doc(inline)]
 pub use self::arch::sys_reply;
+
+#[doc(inline)]
+pub use self::arch::sys_set_timer;
+
+#[doc(inline)]
+pub use self::arch::sys_get_timer;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ResponseCode(u32);
@@ -136,6 +147,12 @@ pub struct RecvMessage<'a> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Truncated;
+
+#[derive(Copy, Clone, Debug)]
+pub struct TimerSettings {
+    pub now: u64,
+    pub alarm: Option<(u64, u32)>,
+}
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "no-panic")] {
