@@ -47,13 +47,12 @@ pub fn find_faulted_task(task_index: usize) -> Option<NonZeroUsize> {
 /// Requests that the task at a given index be reinitialized and optionally
 /// started.
 ///
-/// If `start` is `false`, the task will be reset but left in the stopped state.
-///
-/// If `start` is `true`, the task will be marked runnable.
-pub fn reinitialize_task(task_index: usize, start: bool) {
+/// `new_state` controls whether the task gets set to runnable after
+/// reinitialization.
+pub fn reinitialize_task(task_index: usize, new_state: NewState) {
     let mut msg = [0; 5];
     msg[..4].copy_from_slice(&(task_index as u32).to_le_bytes());
-    msg[4] = start as u8;
+    msg[4] = new_state as u8;
 
     let _ = userlib::sys_send_to_kernel(
         Kipcnum::RestartTask as u16,
@@ -61,4 +60,10 @@ pub fn reinitialize_task(task_index: usize, start: bool) {
         &mut [],
         &mut [],
     );
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum NewState {
+    Halted = 0,
+    Runnable = 1,
 }

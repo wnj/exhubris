@@ -22,7 +22,7 @@ fn main() -> ! {
         let mut i = 0;
         while let Some(i2) = kipc::find_faulted_task(i) {
             i = usize::from(i2);
-            kipc::reinitialize_task(i, true);
+            kipc::reinitialize_task(i, kipc::NewState::Runnable);
         }
     }
 }
