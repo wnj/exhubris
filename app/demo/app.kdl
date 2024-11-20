@@ -16,7 +16,13 @@ kernel {
     stack-size 1024
 }
 
-// IPC server. This must be first for ping to find it, currently.
+task "super" {
+    workspace-crate "minisuper"
+    stack-size 128
+    priority 0
+}
+
+// IPC server. This must be at index 1 for ping to find it, currently.
 task "pong" {
     workspace-crate "pong"
     stack-size 256

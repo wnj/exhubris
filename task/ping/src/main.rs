@@ -11,9 +11,9 @@ use userlib::TaskId;
 
 #[export_name = "main"]
 fn main() -> ! {
-    // TODO: we're assuming pong is at task index 0, which is not true in the
+    // TODO: we're assuming pong is at task index 1, which is not true in the
     // general case.
-    let mut pong = TaskId::gen0(0);
+    let mut pong = TaskId::gen0(1);
 
     // Arbitrarily chosen operation code:
     let ping_op: u16 = 1;
