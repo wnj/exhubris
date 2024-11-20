@@ -1,6 +1,6 @@
 use core::arch::global_asm;
 use core::mem::MaybeUninit;
-use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings};
+use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings, ReplyFaultReason};
 
 pub(crate) fn idle() {
     cortex_m::asm::wfi();
@@ -415,6 +415,60 @@ sys_reply_stub:
     sysnum = const Sysnum::Reply as u32,
 );
 
+#[inline(always)]
+pub fn sys_reply_fault(
+    sender: TaskId,
+    reason: ReplyFaultReason,
+) {
+    unsafe {
+        sys_reply_fault_stub(
+            sender.0 as u32,
+            reason as u32,
+        )
+    }
+}
+
+global_asm!("
+.section .text.sys_reply_fault_stub
+.globl sys_reply_fault_stub
+.type sys_reply_fault_stub,function
+sys_reply_fault_stub:
+    .cfi_startproc
+
+    @ Stash the register values we're about to destroy.
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r4, -8
+    .cfi_offset r5, -4
+
+    mov r4, r11
+    push {{r4}}
+    .cfi_adjust_cfa_offset 4
+    .cfi_offset r11, -12
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments 0-1 into the correct registers.
+    mov r4, r0
+    mov r5, r1
+
+    svc #0
+
+    @ Restore the registers.
+    pop {{r4}}
+    .cfi_adjust_cfa_offset -4
+    mov r11, r4
+    pop {{r4-r5}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::ReplyFault as u32,
+);
+
 pub fn sys_panic(msg: &[u8]) -> ! {
     unsafe {
         sys_panic_stub(msg.as_ptr(), msg.len())
@@ -663,6 +717,11 @@ extern "C" {
         code: u32,
         outgoing_base: *const u8,
         outgoing_len: usize,
+    );
+
+    fn sys_reply_fault_stub(
+        sender: u32,
+        reason: u32,
     );
 
     /// # Safety

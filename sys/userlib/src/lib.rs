@@ -8,6 +8,7 @@ pub enum Sysnum {
     SetTimer = 3,
     Panic = 8,
     GetTimer = 9,
+    ReplyFault = 12,
 }
 
 pub const GEN_BITS: u32 = 6;
@@ -99,6 +100,9 @@ pub use self::arch::sys_recv_notification;
 pub use self::arch::sys_reply;
 
 #[doc(inline)]
+pub use self::arch::sys_reply_fault;
+
+#[doc(inline)]
 pub use self::arch::sys_set_timer;
 
 #[doc(inline)]
@@ -152,6 +156,35 @@ pub struct Truncated;
 pub struct TimerSettings {
     pub now: u64,
     pub alarm: Option<(u64, u32)>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum ReplyFaultReason {
+    /// The message indicated some operation number that is unknown to the
+    /// server -- which almost certainly indicates that the client intended the
+    /// message for a different kind of server.
+    UndefinedOperation = 0,
+    /// The message sent by the client had the wrong size to even attempt
+    /// parsing by the server -- either too short or too long. (Because most
+    /// messages are fixed size, it currently doesn't seem useful to distinguish
+    /// between too-short and too-long.)
+    BadMessageSize = 1,
+    /// The server attempted to parse the message, and couldn't. This may
+    /// indicate an enum with an illegal value, or a more nuanced error on
+    /// operations that use serde encoding.
+    BadMessageContents = 2,
+    /// The client did not provide the leases required for the operation, or
+    /// provided them with the wrong attributes.
+    BadLeases = 3,
+    /// The client did not provide a reply buffer large enough to receive the
+    /// server's reply, despite this information being implied by the IPC
+    /// protocol.
+    ReplyBufferTooSmall = 4,
+
+    /// Application-defined: The client attempted to operate on a resource that
+    /// is not available to them due to mandatory access control or other type
+    /// of access validation.
+    AccessViolation = 5,
 }
 
 cfg_if::cfg_if! {

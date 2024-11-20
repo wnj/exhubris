@@ -1,4 +1,4 @@
-use crate::{Lease, RecvMessage, ResponseCode, TaskDeath, TaskId, TimerSettings};
+use crate::{Lease, RecvMessage, ResponseCode, TaskDeath, TaskId, TimerSettings, ReplyFaultReason};
 use core::mem::MaybeUninit;
 
 pub(crate) fn idle() {
@@ -45,6 +45,13 @@ pub fn sys_reply(
     _sender: TaskId,
     _code: ResponseCode,
     _message: &[u8],
+) {
+    unimplemented!()
+}
+
+pub fn sys_reply_fault(
+    _sender: TaskId,
+    _reason: ReplyFaultReason,
 ) {
     unimplemented!()
 }
