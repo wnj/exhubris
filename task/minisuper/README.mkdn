@@ -1,0 +1,17 @@
+# `minisuper`: minimal supervisor implementation
+
+`minisuper` is a minimal supervisory task for Hubris applications. It can only
+do one thing, which is restart tasks that crash. (This is enough for a lot of
+applications!)
+
+`minisuper` is designed with the following goals:
+
+- Build with `no-panic`. The supervisor task must not crash, and so the
+  supervisor executable should not contain any panic sites.
+
+- Compile to as little machine code as practical (currently a smidge over 256
+  bytes).
+
+In addition to being an abbreviation for "minimal supervisor," `minisuper` is
+a slang name for small markets or general stores in Mexico, continuing the
+tradition of naming supervisory components in Spanish since `jefe`.
