@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use userlib::{sys_recv_open, sys_reply, ResponseCode};
+use userlib::{sys_panic, sys_recv_open, sys_reply, ResponseCode};
 
 #[no_mangle]
 static mut MESSAGE_COUNT: u32 = 0;
@@ -15,5 +15,11 @@ fn main() -> ! {
             MESSAGE_COUNT = MESSAGE_COUNT.wrapping_add(1);
         }
         sys_reply(rm.sender, ResponseCode::SUCCESS, &[]);
+
+        // Periodically crash this task to test both supervisor restarts, and
+        // IPC client handling of dead codes.
+        if unsafe { MESSAGE_COUNT } % 10 == 0 {
+            sys_panic(b"");
+        }
     }
 }
