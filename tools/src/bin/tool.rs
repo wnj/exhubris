@@ -565,7 +565,8 @@ fn main() -> miette::Result<()> {
         }
         Cmd::Pack { bindir, outpath } => {
             let mut overall_segments = RangeMap::new();
-            let mut hex = vec![];
+            let mut protohex = vec![];
+            let mut start = None;
 
             for dirent in std::fs::read_dir(&bindir).into_diagnostic()? {
                 let dirent = dirent.into_diagnostic()?;
@@ -577,28 +578,39 @@ fn main() -> miette::Result<()> {
 
                 for phdr in &elf.program_headers {
                     if phdr.p_type == goblin::elf::program_header::PT_LOAD {
-                        overall_segments.insert(
-                            phdr.p_vaddr..phdr.p_vaddr + phdr.p_memsz,
-                            name.clone(),
-                        );
+                        let arange = phdr.p_vaddr..phdr.p_vaddr + phdr.p_memsz;
+                        if overall_segments.overlaps(&arange) {
+                            panic!("range {arange:x?} for {name} overlaps another!");
+                        }
+                        overall_segments.insert(arange, name.clone());
                         if phdr.p_filesz != 0 {
                             let slice = &bytes[phdr.p_offset as usize..(phdr.p_offset + phdr.p_filesz) as usize];
 
                             for (i, chunk) in slice.chunks(255).enumerate() {
                                 let addr = phdr.p_paddr + i as u64 * 255;
-                                hex.push(ihex::Record::ExtendedLinearAddress((addr >> 16) as u16));
-                                hex.push(ihex::Record::Data {
-                                    offset: addr as u16,
-                                    value: chunk.to_vec(),
-                                });
+                                protohex.push((addr, chunk.to_vec()));
                             }
                         }
                     }
                 }
 
                 if name == "kernel" {
-                    hex.push(ihex::Record::StartLinearAddress(elf.entry as u32));
+                    start = Some(elf.entry);
                 }
+            }
+
+            protohex.sort_by_key(|(addr, _)| *addr);
+
+            let mut hex = vec![];
+            for (addr, data) in protohex {
+                hex.push(ihex::Record::ExtendedLinearAddress((addr >> 16) as u16));
+                hex.push(ihex::Record::Data {
+                    offset: addr as u16,
+                    value: data,
+                });
+            }
+            if let Some(a) = start {
+                hex.push(ihex::Record::StartLinearAddress(a as u32));
             }
             hex.push(ihex::Record::EndOfFile);
 
