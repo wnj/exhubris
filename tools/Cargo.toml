@@ -16,7 +16,7 @@ size = "0.4.1"
 strsim = "0.11.1"
 
 #hubris-build-kconfig = {package = "build-kconfig", git = "https://github.com/oxidecomputer/hubris.git"}
-hubris-build-kconfig = {package = "build-kconfig", git = "https://github.com/cbiffle/hubris-fork.git", branch = "cbiffle/kern-stable"}
+hubris-build-kconfig = {package = "build-kconfig", git = "https://github.com/cbiffle/hubris-fork.git", branch = "cbiffle/exhubris-fixes"}
 ron = "0.8.1"
 rangemap = "1.5.1"
 ihex = "3.0.0"
