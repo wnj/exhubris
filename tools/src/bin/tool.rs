@@ -25,6 +25,9 @@ enum Cmd {
         #[clap(short, long)]
         root: PathBuf,
         cfg_path: PathBuf,
+
+        #[clap(long)]
+        cargo_verbose: bool,
     },
     Pack {
         bindir: PathBuf,
@@ -39,7 +42,7 @@ fn main() -> miette::Result<()> {
     let args = Tool::parse();
 
     match args.cmd {
-        Cmd::Build { cfg_path, root } => {
+        Cmd::Build { cfg_path, root, cargo_verbose } => {
             let root = root.canonicalize().into_diagnostic()?;
             let doc_src = fs::read_to_string(&cfg_path)
                 .into_diagnostic()
@@ -92,6 +95,7 @@ fn main() -> miette::Result<()> {
                     &targetroot,
                     &dir1,
                     name,
+                    cargo_verbose,
                 )?;
             }
 
@@ -434,6 +438,7 @@ fn main() -> miette::Result<()> {
                 &targetroot,
                 &dir3,
                 "kernel",
+                cargo_verbose,
             )?;
 
             std::fs::remove_file(dir3.join("memory.x")).into_diagnostic()?;
@@ -751,6 +756,7 @@ fn do_cargo_build(
     targetroot: &Path,
     workdir: &Path,
     product_name: &str,
+    cargo_verbose: bool,
 ) -> miette::Result<()> {
     let comma_features = itertools::join(&plan.cargo_features, ",");
     let mut rows = vec![
@@ -825,6 +831,10 @@ fn do_cargo_build(
             installroot
         }
     };
+
+    if cargo_verbose {
+        cmd.arg("--verbose");
+    }
 
     cmd.args(["--target", &plan.target_triple]);
 
