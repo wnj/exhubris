@@ -96,6 +96,12 @@ fn main() -> miette::Result<()> {
                         }
                         cmd.args(["build", "--release", "--target", &plan.target_triple]);
                         cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
+                        if !plan.default_features {
+                            cmd.arg("--no-default-features");
+                        }
+                        if !plan.cargo_features.is_empty() {
+                            cmd.args(["--features", &itertools::join(&plan.cargo_features, ",")]);
+                        }
                         cmd.env("RUSTFLAGS",
                             "-C link-arg=-Ttask-rlink.x -C link-arg=-r");
                         cmd.env("HUBRIS_TASKS", &tasknames);
@@ -132,6 +138,13 @@ fn main() -> miette::Result<()> {
                         cmd.args(["--rev", rev]);
                         cmd.args(["--no-track", "--root"]);
                         cmd.arg(tmp_dir.path());
+
+                        if !plan.default_features {
+                            cmd.arg("--no-default-features");
+                        }
+                        if !plan.cargo_features.is_empty() {
+                            cmd.args(["--features", &itertools::join(&plan.cargo_features, ",")]);
+                        }
 
                         cmd.env("CARGO_TARGET_DIR", ctdir);
                         cmd.env("HUBRIS_TASKS", &tasknames);
@@ -497,6 +510,12 @@ fn main() -> miette::Result<()> {
                     }
                     cmd.args(["build", "--release", "--target", &overall_plan.kernel.target_triple]);
                     cmd.args(["-p", &overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
+                    if !overall_plan.kernel.default_features {
+                        cmd.arg("--no-default-features");
+                    }
+                    if !overall_plan.kernel.cargo_features.is_empty() {
+                        cmd.args(["--features", &itertools::join(&overall_plan.kernel.cargo_features, ",")]);
+                    }
                     cmd.env("RUSTFLAGS",
                         format!(
                             "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
@@ -566,6 +585,12 @@ fn main() -> miette::Result<()> {
                     cmd.args(["--git", repo, "--rev", rev]);
                     cmd.args(["--no-track", "--root"]);
                     cmd.arg(tmp_dir.path());
+                    if !overall_plan.kernel.default_features {
+                        cmd.arg("--no-default-features");
+                    }
+                    if !overall_plan.kernel.cargo_features.is_empty() {
+                        cmd.args(["--features", &itertools::join(&overall_plan.kernel.cargo_features, ",")]);
+                    }
 
                     cmd.env("RUSTFLAGS",
                         format!(
