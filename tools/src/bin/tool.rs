@@ -379,11 +379,30 @@ fn main() -> miette::Result<()> {
                 });
             }
 
+            let shared_regions = app.board.chip.peripherals.iter()
+                .map(|(name, pdef)| {
+                    let pdef = pdef.value();
+
+                    (name.clone(), kconfig::RegionConfig {
+                        base: *pdef.base.value() as u32,
+                        size: *pdef.size.value() as u32,
+                        attributes: kconfig::RegionAttributes {
+                            read: true,
+                            write: true,
+                            execute: false,
+                            special_role: Some(kconfig::SpecialRole::Device),
+                        },
+                    })
+                })
+                .collect();
+
             let mut kconfig = kconfig::KernelConfig {
                 tasks: vec![],
-                shared_regions: BTreeMap::new(),
+                shared_regions,
                 irqs: BTreeMap::new(),
             };
+
+            let mut used_shared_regions = BTreeSet::new();
 
             for task in built_tasks {
                 let mut config = kconfig::TaskConfig {
@@ -415,8 +434,16 @@ fn main() -> miette::Result<()> {
                     });
                 }
 
+                for name in app.tasks[&task.name].peripherals.keys() {
+                    used_shared_regions.insert(name);
+                    config.shared_regions.insert(name.clone());
+                }
+
                 kconfig.tasks.push(config);
             }
+
+            // Reduce shared region set for kconfig:
+            kconfig.shared_regions.retain(|name, _| used_shared_regions.contains(name));
 
             println!("-------------------------------------------");
             println!("kconfig would be:");

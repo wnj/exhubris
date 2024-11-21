@@ -51,6 +51,21 @@ pub struct ChipDef {
 
     /// Allocatable memory regions.
     pub memory: IndexMap<String, Spanned<RegionDef>>,
+
+    /// Named peripherals.
+    pub peripherals: BTreeMap<String, Spanned<PeripheralDef>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PeripheralDef {
+    /// Base address of the region.
+    pub base: Spanned<u64>,
+    /// Size of the region in bytes.
+    pub size: Spanned<u64>,
+    /// Interrupts specific to this peripheral, numbered in a platform-specific
+    /// fashion. Peripherals with a single interrupt use the name `irq` by
+    /// convention.
+    pub interrupts: BTreeMap<String, u32>,
 }
 
 /// Definition of a region of address space.
@@ -80,6 +95,9 @@ pub struct TaskDef {
     pub default_features: bool,
     pub toolchain: Option<Spanned<String>>,
     pub target: Option<Spanned<String>>,
+
+    /// Peripherals used by this task.
+    pub peripherals: BTreeMap<String, SourceSpan>,
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +229,18 @@ pub fn parse_app(
             })
             .collect::<miette::Result<IndexMap<_, _>>>()?;
 
+        // Check task peripheral references.
+        for (name, task) in &tasks {
+            for (pname, span) in &task.peripherals {
+                if !board.chip.peripherals.contains_key(pname) {
+                    bail!(
+                        labels=[LabeledSpan::at(*span, "unknown name")],
+                        "task {name} references unknown peripheral {pname}"
+                    )
+                }
+            }
+        }
+
         let kernel_node = get_unique_child(doc, "kernel")?;
         let kernel = parse_kernel(
             source.clone(),
@@ -304,6 +334,10 @@ pub fn parse_chip(
             .into_iter()
             .map(|(key, node)| parse_region(node).map(|r| (key, r)))
             .collect::<miette::Result<IndexMap<_, _>>>()?;
+        let peripherals = get_uniquely_named_children(doc, "peripheral")?
+            .into_iter()
+            .map(|(key, node)| parse_peripheral(node).map(|r| (key, r)))
+            .collect::<miette::Result<BTreeMap<_, _>>>()?;
 
         Ok(ChipDef {
             source: source.clone(),
@@ -311,6 +345,7 @@ pub fn parse_chip(
             target_triple,
             vector_table_size,
             memory,
+            peripherals,
         })
     })
 }
@@ -393,6 +428,23 @@ pub fn parse_task(
 
         let toolchain = get_unique_optional_string_value(doc, "toolchain")?;
         let target = get_unique_optional_string_value(doc, "target")?;
+
+        let peripherals = get_uniquely_named_children(doc, "uses-peripheral")?;
+        let mut unique_peripherals = BTreeMap::new();
+        let mut duplicate_peripherals = vec![];
+        for (name, pnode) in peripherals {
+            if unique_peripherals.insert(name.clone(), *pnode.span()).is_some() {
+                duplicate_peripherals.push((name, *pnode.span()));
+            }
+        }
+        if !duplicate_peripherals.is_empty() {
+            let labels = duplicate_peripherals.into_iter().map(|(_name, span)| LabeledSpan::at(span, "duplicate")).collect::<Vec<_>>();
+            bail!(
+                labels = labels,
+                "Peripheral names must not be repeated"
+            );
+        }
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
@@ -402,6 +454,7 @@ pub fn parse_task(
             default_features,
             toolchain,
             target,
+            peripherals: unique_peripherals.into_iter().collect(),
         })
     })
 }
@@ -501,6 +554,59 @@ fn parse_region(node: &KdlNode) -> miette::Result<Spanned<RegionDef>> {
         })?;
 
     Ok(Spanned::new(RegionDef { base, size }, *node.span()))
+}
+
+fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
+    let doc = node.children().ok_or_else(|| {
+        miette!(
+            labels = [LabeledSpan::at(*node.span(), "missing body")],
+            "region node must have a body"
+        )
+    })?;
+    let base = get_unique_i64_value(doc, "base")?
+        .try_map_with_span(|v, span| {
+            u64::try_from(v).into_diagnostic().wrap_err_with(|| {
+                miette!(
+                    labels = [LabeledSpan::at(span, "not an unsigned integer")],
+                    "base address must fit in a u64"
+                )
+            })
+        })?;
+    let size = get_unique_i64_value(doc, "size")?
+        .try_map_with_span(|v, span| {
+            u64::try_from(v).into_diagnostic().wrap_err_with(|| {
+                miette!(
+                    labels = [LabeledSpan::at(span, "not an unsigned integer")],
+                    "size must fit in a u64"
+                )
+            })
+        })?;
+
+    let irqs = get_uniquely_named_children(doc, "irq")?;
+    let mut interrupts = BTreeMap::new();
+    for (name, irqnode) in irqs {
+        let entries = irqnode.entries();
+        let irq = entries.get(1).and_then(|e| e.value().as_i64().map(|i| Spanned::new(i, *e.span())));
+        if entries.len() != 2 || irq.is_none() {
+            bail!(
+                labels = [LabeledSpan::at(*irqnode.span(), "wrong arguments")],
+                "'irq' should have two arguments: a name (string) and a number (integer)",
+            );
+        }
+
+        let irq = irq.unwrap().try_map_with_span(|i, span| {
+            u32::try_from(i)
+                .map_err(|_| {
+                    miette!(
+                        labels = [LabeledSpan::at(span, "not a u32")],
+                        "interrupt number must be a u32",
+                    )
+                })
+        })?;
+        interrupts.insert(name, irq.into_value());
+    }
+
+    Ok(Spanned::new(PeripheralDef { base, size, interrupts }, *node.span()))
 }
 
 

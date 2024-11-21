@@ -16,3 +16,14 @@ memory {
         size 8192
     }
 }
+
+peripheral "rcc" {
+    base 0x4002_1000
+    size 0x400
+    irq "irq" 4
+}
+
+peripheral "gpios" {
+    base 0x5000_0000
+    size 0x2000
+}
