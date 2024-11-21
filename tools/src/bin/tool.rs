@@ -6,10 +6,10 @@ use comfy_table::CellAlignment;
 use goblin::elf::program_header::PT_LOAD;
 use indexmap::IndexMap;
 use kdl::{KdlDocument, KdlNode, KdlValue};
-use miette::{diagnostic, miette, Context as _, IntoDiagnostic as _, LabeledSpan, NamedSource, Report, SourceSpan};
+use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, Report, SourceSpan};
 use rangemap::RangeMap;
 use size::Size;
-use tools::appcfg::{BuildMethod, KernelDef, RegionDef};
+use tools::appcfg::{AppDef, BuildMethod, BuildPlan, KernelDef, RegionDef};
 
 use hubris_build_kconfig as kconfig;
 
@@ -29,6 +29,9 @@ enum Cmd {
     Pack {
         bindir: PathBuf,
         outpath: PathBuf,
+
+        #[clap(short, long)]
+        gdbconfig: Option<PathBuf>,
     },
 }
 
@@ -64,106 +67,32 @@ fn main() -> miette::Result<()> {
 
 
             let env = tools::determine_build_env()?;
-            println!("build environment:");
-            println!("{env:#?}");
+
+            simple_table([
+                ("App name", app.name.value().as_str()),
+                ("Config path", &cfg_path.display().to_string()),
+                ("Workspace root", &root.display().to_string()),
+                ("Host platform", &env.host_triple),
+                ("Default toolchain", &env.release),
+            ]);
             println!();
 
             let overall_plan = tools::appcfg::plan_build(&app)?;
-            for (name, plan) in &overall_plan.tasks {
-                println!("{name}: {plan:#?}");
-            }
             let targetroot = root.join("target");
             let workdir = root.join(".work").join(app.name.value());
             maybe_create_dir(&workdir).into_diagnostic()?;
 
-            let tasknames = itertools::join(overall_plan.tasks.keys(), ",");
-
             let dir1 = workdir.join("build");
             maybe_create_dir(&dir1).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
-                match &plan.method {
-                    BuildMethod::CargoWorkspaceBuild => {
-                        println!("-------------------------------------------");
-                        println!("building task {name} from workspace package {}",
-                            plan.package_name);
-                        println!("-------------------------------------------");
-                        let mut target = targetroot.join(&plan.target_triple);
-                        target.push("release");
-
-                        let mut cmd = Command::new("cargo");
-                        if let Some(tc) = &plan.toolchain_override {
-                            cmd.arg(format!("+{tc}"));
-                        }
-                        cmd.args(["build", "--release", "--target", &plan.target_triple]);
-                        cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
-                        if !plan.default_features {
-                            cmd.arg("--no-default-features");
-                        }
-                        if !plan.cargo_features.is_empty() {
-                            cmd.args(["--features", &itertools::join(&plan.cargo_features, ",")]);
-                        }
-                        cmd.env("RUSTFLAGS",
-                            "-C link-arg=-Ttask-rlink.x -C link-arg=-r");
-                        cmd.env("HUBRIS_TASKS", &tasknames);
-                        let status = cmd.status().into_diagnostic()?;
-                        if !status.success() {
-                            return Err(miette!("failed to build task {name}, see output"));
-                        }
-
-                        let binpath = target.join(&plan.bin_name);
-                        let outpath = dir1.join(name);
-                        std::fs::copy(&binpath, &outpath).into_diagnostic()?;
-                    }
-                    BuildMethod::CargoInstallGit { repo, rev } => {
-                        println!("-------------------------------------------");
-                        println!("building task {name} using cargo install from git");
-                        println!("-------------------------------------------");
-
-                        let ctdir = dir1.join(format!("{name}.cargo-target"));
-
-                        let tmp_dir = tempdir::TempDir::new("installroot")
-                            .into_diagnostic()?;
-                        std::fs::copy(
-                            root.join("task-rlink.x"),
-                            tmp_dir.path().join("task-rlink.x"),
-                        ).into_diagnostic()?;
-
-                        let mut cmd = Command::new("cargo");
-                        if let Some(tc) = &plan.toolchain_override {
-                            cmd.arg(format!("+{tc}"));
-                        }
-                        cmd.args(["install", "--locked", "--target", &plan.target_triple]);
-                        cmd.args([&plan.package_name, "--bin", &plan.bin_name]);
-                        cmd.args(["--git", repo]);
-                        cmd.args(["--rev", rev]);
-                        cmd.args(["--no-track", "--root"]);
-                        cmd.arg(tmp_dir.path());
-
-                        if !plan.default_features {
-                            cmd.arg("--no-default-features");
-                        }
-                        if !plan.cargo_features.is_empty() {
-                            cmd.args(["--features", &itertools::join(&plan.cargo_features, ",")]);
-                        }
-
-                        cmd.env("CARGO_TARGET_DIR", ctdir);
-                        cmd.env("HUBRIS_TASKS", &tasknames);
-                        cmd.env(
-                            "RUSTFLAGS",
-                            format!("-C link-arg=-Ttask-rlink.x -C link-arg=-r \
-                                    -C link-arg=-L{}",
-                                    tmp_dir.path().display())
-                        );
-                        let status = cmd.status().into_diagnostic()?;
-                        if !status.success() {
-                            return Err(miette!("failed to build task {name}, see output"));
-                        }
-
-                        let binpath = tmp_dir.path().join("bin").join(&plan.bin_name);
-                        let outpath = dir1.join(name);
-                        std::fs::copy(&binpath, &outpath).into_diagnostic()?;
-                    }
-                }
+                do_cargo_build(
+                    &root.join("task-rlink.x"),
+                    plan,
+                    LinkStyle::Partial,
+                    &targetroot,
+                    &dir1,
+                    name,
+                )?;
             }
 
             println!("-------------------------------------------");
@@ -308,9 +237,13 @@ fn main() -> miette::Result<()> {
             println!("-------------------------------------------");
             println!("starting final task link");
             println!("-------------------------------------------");
-            std::fs::copy(root.join("task-link3.x"), targetroot.join("task-link3.x")).into_diagnostic()?;
+            std::fs::copy(root.join("task-link3.x"), targetroot.join("task-link3.x")).into_diagnostic().context("copying link3")?;
             let dir3 = workdir.join("final");
-            std::fs::remove_dir_all(&dir3).into_diagnostic()?;
+            match std::fs::remove_dir_all(&dir3) {
+                Ok(()) => (),
+                Err(e) if e.kind() == ErrorKind::NotFound => (),
+                e => e.into_diagnostic()?,
+            }
             maybe_create_dir(&dir3).into_diagnostic()?;
             let mut built_tasks = vec![];
             for (taskname, plan) in &overall_plan.tasks {
@@ -368,7 +301,6 @@ fn main() -> miette::Result<()> {
                 }
 
                 std::fs::remove_file(linker_script_path).into_diagnostic()?;
-
                 let file_image = std::fs::read(&outpath2).into_diagnostic()?;
                 let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
 
@@ -455,181 +387,71 @@ fn main() -> miette::Result<()> {
                 kconfig.tasks.push(config);
             }
 
-            // Reduce shared region set for kconfig:
             kconfig.shared_regions.retain(|name, _| used_shared_regions.contains(name));
 
-            println!("-------------------------------------------");
-            println!("kconfig would be:");
-            println!("-------------------------------------------");
-            ron::ser::to_writer_pretty(
-                std::io::stdout(),
-                &kconfig,
-                ron::ser::PrettyConfig::new().enumerate_arrays(true).struct_names(true),
-            ).into_diagnostic()?;
+            {
+                let linker_script_path = dir3.join("memory.x");
+                let mut scr = std::fs::File::create(&linker_script_path)
+                    .into_diagnostic()?;
+                writeln!(scr, "MEMORY {{").into_diagnostic()?;
 
-            match &overall_plan.kernel.method {
-                BuildMethod::CargoWorkspaceBuild => {
-                    println!("-------------------------------------------");
-                    println!("building kernel using Cargo");
-                    println!("-------------------------------------------");
-                    let mut target = targetroot.join(&overall_plan.kernel.target_triple);
-                    target.push("release");
+                writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
+                allocs.kernel.stack.start(),
+                (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
+                ).into_diagnostic()?;
 
-                    {
-                        let linker_script_path = targetroot.join("memory.x");
-                        let mut scr = std::fs::File::create(&linker_script_path)
-                            .into_diagnostic()?;
-                        writeln!(scr, "MEMORY {{").into_diagnostic()?;
+                for orig_name in app.board.chip.memory.keys() {
+                    let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
+                        continue;
+                    };
 
-                        writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
-                        allocs.kernel.stack.start(),
-                        (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
-                        ).into_diagnostic()?;
+                    let name = orig_name.to_ascii_uppercase();
+                    let base = *regalloc.start();
+                    let size = (regalloc.end() - regalloc.start()) + 1;
 
-                        for orig_name in app.board.chip.memory.keys() {
-                            let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
-                                continue;
-                            };
-
-                            let name = orig_name.to_ascii_uppercase();
-                            let base = *regalloc.start();
-                            let size = (regalloc.end() - regalloc.start()) + 1;
-
-                            writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
-                        }
-                        writeln!(scr, "}}").into_diagnostic()?;
-
-                        // TODO these values are hardcoded
-                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
-                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
-                    }
-
-                    let mut cmd = Command::new("cargo");
-                    if let Some(tc) = &overall_plan.kernel.toolchain_override {
-                        cmd.arg(format!("+{tc}"));
-                    }
-                    cmd.args(["build", "--release", "--target", &overall_plan.kernel.target_triple]);
-                    cmd.args(["-p", &overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
-                    if !overall_plan.kernel.default_features {
-                        cmd.arg("--no-default-features");
-                    }
-                    if !overall_plan.kernel.cargo_features.is_empty() {
-                        cmd.args(["--features", &itertools::join(&overall_plan.kernel.cargo_features, ",")]);
-                    }
-                    cmd.env("RUSTFLAGS",
-                        format!(
-                            "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
-                            targetroot.display()
-                        )
-                    );
-                    cmd.env(
-                        "HUBRIS_KCONFIG",
-                        &ron::ser::to_string(&kconfig).into_diagnostic()?,
-                    );
-                    cmd.env(
-                        "HUBRIS_IMAGE_ID",
-                        "12345678",
-                    );
-
-                    let status = cmd.status().into_diagnostic()?;
-                    if !status.success() {
-                        return Err(miette!("failed to build kernel, see output"));
-                    }
-
-                    let binpath = target.join(&overall_plan.kernel.bin_name);
-                    let outpath = dir3.join("kernel");
-                    std::fs::copy(&binpath, &outpath).into_diagnostic()?;
+                    writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
                 }
-                BuildMethod::CargoInstallGit { repo, rev } => {
-                    println!("-------------------------------------------");
-                    println!("building kernel using Cargo");
-                    println!("-------------------------------------------");
-                    let tmp_dir = tempdir::TempDir::new("installroot")
-                        .into_diagnostic()?;
+                writeln!(scr, "}}").into_diagnostic()?;
 
-                    {
-                        let linker_script_path = tmp_dir.path().join("memory.x");
-                        let mut scr = std::fs::File::create(&linker_script_path)
-                            .into_diagnostic()?;
-                        writeln!(scr, "MEMORY {{").into_diagnostic()?;
-
-                        writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
-                            allocs.kernel.stack.start(),
-                            (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
-                            ).into_diagnostic()?;
-
-                        for orig_name in app.board.chip.memory.keys() {
-                            let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
-                                continue;
-                            };
-
-                            let name = orig_name.to_ascii_uppercase();
-                            let base = *regalloc.start();
-                            let size = (regalloc.end() - regalloc.start()) + 1;
-
-                            writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
-                        }
-                        writeln!(scr, "}}").into_diagnostic()?;
-
-                        // TODO these values are hardcoded
-                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
-                        writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
-                    }
-
-                    let mut cmd = Command::new("cargo");
-                    if let Some(tc) = &overall_plan.kernel.toolchain_override {
-                        cmd.arg(format!("+{tc}"));
-                    }
-                    cmd.args(["install", "--locked", "--target", &overall_plan.kernel.target_triple]);
-                    cmd.args([&overall_plan.kernel.package_name, "--bin", &overall_plan.kernel.bin_name]);
-                    cmd.args(["--git", repo, "--rev", rev]);
-                    cmd.args(["--no-track", "--root"]);
-                    cmd.arg(tmp_dir.path());
-                    if !overall_plan.kernel.default_features {
-                        cmd.arg("--no-default-features");
-                    }
-                    if !overall_plan.kernel.cargo_features.is_empty() {
-                        cmd.args(["--features", &itertools::join(&overall_plan.kernel.cargo_features, ",")]);
-                    }
-
-                    cmd.env("RUSTFLAGS",
-                        format!(
-                            "-C link-arg=-L{} -C link-arg=-Tkernel-link.x",
-                            tmp_dir.path().display()
-                        )
-                    );
-                    cmd.env(
-                        "HUBRIS_KCONFIG",
-                        &ron::ser::to_string(&kconfig).into_diagnostic()?,
-                    );
-                    cmd.env(
-                        "HUBRIS_IMAGE_ID",
-                        "12345678",
-                    );
-
-                    let status = cmd.status().into_diagnostic()?;
-                    if !status.success() {
-                        return Err(miette!("failed to build kernel, see output"));
-                    }
-
-                    let binpath = tmp_dir.path().join(&overall_plan.kernel.bin_name);
-                    let outpath = dir3.join("kernel");
-                    std::fs::copy(&binpath, &outpath).into_diagnostic()?;
-                }
+                // TODO these values are hardcoded
+                writeln!(scr, "_HUBRIS_IMAGE_HEADER_ALIGN = 4;").into_diagnostic()?;
+                writeln!(scr, "_HUBRIS_IMAGE_HEADER_SIZE = 0x50;").into_diagnostic()?;
             }
+            let mut overall_plan = overall_plan;
+            overall_plan.kernel.smuggled_env.insert(
+                "HUBRIS_KCONFIG".to_string(),
+                ron::ser::to_string(&kconfig).into_diagnostic()?,
+            );
+            overall_plan.kernel.smuggled_env.insert(
+                "HUBRIS_IMAGE_ID".to_string(),
+                "12345678".to_string(),
+            );
+
+            do_cargo_build(
+                &root.join("kernel-link.x"),
+                &overall_plan.kernel,
+                LinkStyle::Full,
+                &targetroot,
+                &dir3,
+                "kernel",
+            )?;
+
+            std::fs::remove_file(dir3.join("memory.x")).into_diagnostic()?;
 
             Ok(())
         }
-        Cmd::Pack { bindir, outpath } => {
+        Cmd::Pack { bindir, outpath, gdbconfig } => {
             let mut overall_segments = RangeMap::new();
             let mut protohex = vec![];
             let mut start = None;
+            let mut all_paths = vec![];
 
             for dirent in std::fs::read_dir(&bindir).into_diagnostic()? {
                 let dirent = dirent.into_diagnostic()?;
                 let name = dirent.file_name();
                 let name = name.into_string().unwrap();
                 let path = dirent.path();
+                all_paths.push(path.clone());
                 let bytes = std::fs::read(&path).into_diagnostic()?;
                 let elf = goblin::elf::Elf::parse(&bytes).into_diagnostic()?;
 
@@ -701,6 +523,21 @@ fn main() -> miette::Result<()> {
 
             let hexstr = ihex::create_object_file_representation(&hex).into_diagnostic()?;
             std::fs::write(outpath, &hexstr).into_diagnostic()?;
+
+            if let Some(gdbconfig) = gdbconfig {
+                let mut g = std::fs::File::create(gdbconfig).into_diagnostic()?;
+                for p in &all_paths {
+                    if p.ends_with("kernel") {
+                        writeln!(g, "file {}", p.display()).into_diagnostic()?;
+                    }
+                }
+                writeln!(g, "target extended-remote localhost:3333").into_diagnostic()?;
+                for p in all_paths {
+                    if !p.ends_with("kernel") {
+                        writeln!(g, "add-symbol-file {}", p.display()).into_diagnostic()?;
+                    }
+                }
+            }
 
             Ok(())
         }
@@ -899,4 +736,158 @@ struct OwnedRegion {
 struct OwnedAddress {
     region: String,
     offset: u64,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum LinkStyle {
+    Partial,
+    Full,
+}
+
+fn do_cargo_build(
+    linker_script: &Path,
+    plan: &BuildPlan,
+    link_style: LinkStyle,
+    targetroot: &Path,
+    workdir: &Path,
+    product_name: &str,
+) -> miette::Result<()> {
+    let comma_features = itertools::join(&plan.cargo_features, ",");
+    let mut rows = vec![
+        ("Product", product_name),
+        ("Package", &plan.package_name),
+        ("Binary", &plan.bin_name),
+        ("Target", &plan.target_triple),
+        ("Default Features", if plan.default_features { "true" } else { "false" }),
+        ("Features", &comma_features),
+    ];
+    if let Some(tc) = &plan.toolchain_override {
+        rows.push(("Toolchain Override", tc));
+    }
+    if !plan.rustflags.is_empty() {
+        rows.push(("RUSTFLAGS", &plan.rustflags));
+    }
+    for (k, v) in &plan.smuggled_env {
+        rows.push((k, v));
+    }
+    simple_table(rows);
+    
+    let mut cmd = Command::new("cargo");
+
+    if let Some(tc) = &plan.toolchain_override {
+        cmd.arg(format!("+{tc}"));
+    }
+
+    let linker_script_copy = workdir.join("link.x");
+
+    let mut rustflags = format!("-C link-arg=-L{} -C link-arg=-T{}{}",
+            workdir.display(),
+            linker_script_copy.display(),
+            match link_style {
+                LinkStyle::Partial => " -C link-arg=-r",
+                LinkStyle::Full => "",
+            },
+    );
+    if !plan.rustflags.is_empty() {
+        rustflags.push(' ');
+        rustflags.push_str(&plan.rustflags);
+    }
+
+    cmd.env("RUSTFLAGS", rustflags);
+
+    let product_path = match &plan.method {
+        BuildMethod::CargoWorkspaceBuild => {
+            cmd.args(["build", "--release"]);
+            cmd.args(["-p", &plan.package_name, "--bin", &plan.bin_name]);
+
+            let mut outloc = targetroot.join(&plan.target_triple);
+            outloc.push("release");
+            outloc.push(&plan.bin_name);
+            outloc
+        }
+        BuildMethod::CargoInstallGit { repo, rev } => {
+            cmd.args(["install", "--locked", "--no-track", "--force"]);
+            cmd.arg(&plan.package_name);
+            cmd.args(["--bin", &plan.bin_name]);
+            cmd.args(["--git", repo]);
+            cmd.args(["--rev", rev]);
+
+            let mut installroot = workdir.join(format!("{product_name}.cargo-install"));
+            let targetdir = workdir.join(format!("{product_name}.cargo-target"));
+
+            cmd.arg("--root");
+            cmd.arg(&installroot);
+
+            cmd.env("CARGO_TARGET_DIR", targetdir);
+
+            installroot.push("bin");
+            installroot.push(&plan.bin_name);
+            installroot
+        }
+    };
+
+    cmd.args(["--target", &plan.target_triple]);
+
+    if !plan.default_features {
+        cmd.arg("--no-default-features");
+    }
+    if !plan.cargo_features.is_empty() {
+        cmd.args(["--features", &comma_features]);
+    }
+
+    for (k, v) in &plan.smuggled_env {
+        cmd.env(k, v);
+    }
+
+    println!("{cmd:?}");
+
+    std::fs::copy(
+        linker_script,
+        &linker_script_copy,
+    ).into_diagnostic()?;
+
+    let status = cmd.status().into_diagnostic()?;
+    if !status.success() {
+        bail!("failed to build, see output");
+    }
+
+    std::fs::remove_file(linker_script_copy).into_diagnostic()?;
+
+    let final_path = workdir.join(product_name);
+    std::fs::copy(&product_path, &final_path).into_diagnostic()
+        .with_context(|| format!("copying {} to {}", product_path.display(), final_path.display()))?;
+
+    Ok(())
+    
+}
+
+fn banner(content: impl core::fmt::Display) {
+    let mut table = comfy_table::Table::new();
+    table.load_preset(comfy_table::presets::UTF8_FULL);
+    table.apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
+    table.set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+
+    table.add_row([content]);
+
+    println!();
+    println!();
+    println!("{table}");
+    println!();
+}
+
+fn simple_table<'a>(content: impl IntoIterator<Item = (&'a str, &'a str)>) {
+    let mut table = comfy_table::Table::new();
+    table.load_preset(comfy_table::presets::UTF8_FULL);
+    table.apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS);
+    table.apply_modifier(comfy_table::modifiers::UTF8_SOLID_INNER_BORDERS);
+    table.set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+
+    for row in content {
+        table.add_row([row.0, row.1]);
+    }
+
+    println!();
+    println!();
+    println!("{table}");
+    println!();
 }

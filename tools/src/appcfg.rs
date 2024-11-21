@@ -22,6 +22,12 @@ pub struct AppDef {
     pub kernel: KernelDef,
 }
 
+impl AppDef {
+    pub fn task_names(&self) -> impl Iterator<Item = &str> {
+        self.tasks.keys().map(|s| s.as_str())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct BoardDef {
     /// Source code containing the board def, for citations; this may be the file
@@ -1044,11 +1050,18 @@ pub fn plan_build(
         })
         .collect::<BTreeMap<_, _>>();
 
+    let hubris_tasks = itertools::join(app.task_names(), ",");
+
     // Attempt to locate the cargo package for each task.
     let mut task_plans = IndexMap::new();
     for (name, task) in &app.tasks {
         let target_triple = task.target.as_ref()
             .unwrap_or(&app.board.chip.target_triple);
+
+        let smuggled_env = [
+            ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
+        ].into_iter().collect();
+
         let plan = match task.package_source.value() {
             PackageSource::WorkspaceCrate { name } => {
                 let package = binmap.get(&(name, name))
@@ -1080,7 +1093,7 @@ pub fn plan_build(
                     toolchain_override: task.toolchain.as_ref().map(|s| s.value().clone()),
                     cargo_features: task.cargo_features.keys().cloned().collect(),
                     default_features: task.default_features,
-                    smuggled_env: Default::default(), // TODO
+                    smuggled_env,
                     rustflags: Default::default(), // TODO
                 }
             }
@@ -1096,7 +1109,7 @@ pub fn plan_build(
                     toolchain_override: task.toolchain.as_ref().map(|s| s.value().clone()),
                     cargo_features: task.cargo_features.keys().cloned().collect(),
                     default_features: task.default_features,
-                    smuggled_env: Default::default(), // TODO
+                    smuggled_env,
                     rustflags: Default::default(), // TODO
                 }
             }
