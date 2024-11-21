@@ -85,6 +85,9 @@ fn main() -> miette::Result<()> {
             let workdir = root.join(".work").join(app.name.value());
             maybe_create_dir(&workdir).into_diagnostic()?;
 
+            let tmpdir = workdir.join("tmp");
+            maybe_create_dir(&tmpdir).into_diagnostic()?;
+
             let dir1 = workdir.join("build");
             maybe_create_dir(&dir1).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
@@ -93,15 +96,14 @@ fn main() -> miette::Result<()> {
                     plan,
                     LinkStyle::Partial,
                     &targetroot,
+                    &tmpdir,
                     &dir1,
                     name,
                     cargo_verbose,
                 )?;
             }
 
-            println!("-------------------------------------------");
-            println!("task build complete, prelinking for size");
-            println!("-------------------------------------------");
+            banner("Task build complete, prelinking for size...");
             std::fs::copy(root.join("task-link2.x"), targetroot.join("task-link2.x")).into_diagnostic()?;
             let mut size_reqs: BTreeMap<&str, IndexMap<&str, u64>> = BTreeMap::new();
             let dir2 = workdir.join("link2");
@@ -178,18 +180,23 @@ fn main() -> miette::Result<()> {
                     size_reqs.entry(region).or_default().insert(taskname, size);
                 }
             }
-            println!("-------------------------------------------");
-            println!("prelinking complete, sizes:");
-            println!("-------------------------------------------");
-            for (taskname, reqs) in &size_reqs {
-                for (memname, size) in reqs {
-                    println!("{taskname:16} {memname:10} {}",
-                        Size::from_bytes(*size));
+            {
+                let mut table = comfy_table::Table::new();
+                table.load_preset(comfy_table::presets::NOTHING);
+                table.set_header(["REGION", "OWNER", "SIZE"]);
+
+                for (taskname, reqs) in &size_reqs {
+                    for (memname, size) in reqs {
+                        table.add_row([taskname.to_string(), memname.to_string(), Size::from_bytes(*size).to_string()]);
+                    }
                 }
+
+                println!("{table}");
+                println!();
             }
 
-            let allocs = allocate_space(&target_spec, &app.board.chip.memory, &size_reqs, &app.kernel)?;
             println!("Allocations:");
+            let allocs = allocate_space(&target_spec, &app.board.chip.memory, &size_reqs, &app.kernel)?;
 
             let mut table = comfy_table::Table::new();
             table.load_preset(comfy_table::presets::NOTHING);
@@ -238,9 +245,6 @@ fn main() -> miette::Result<()> {
             }
             println!("{table}");
             
-            println!("-------------------------------------------");
-            println!("starting final task link");
-            println!("-------------------------------------------");
             std::fs::copy(root.join("task-link3.x"), targetroot.join("task-link3.x")).into_diagnostic().context("copying link3")?;
             let dir3 = workdir.join("final");
             match std::fs::remove_dir_all(&dir3) {
@@ -394,7 +398,7 @@ fn main() -> miette::Result<()> {
             kconfig.shared_regions.retain(|name, _| used_shared_regions.contains(name));
 
             {
-                let linker_script_path = dir3.join("memory.x");
+                let linker_script_path = tmpdir.join("memory.x");
                 let mut scr = std::fs::File::create(&linker_script_path)
                     .into_diagnostic()?;
                 writeln!(scr, "MEMORY {{").into_diagnostic()?;
@@ -436,12 +440,15 @@ fn main() -> miette::Result<()> {
                 &overall_plan.kernel,
                 LinkStyle::Full,
                 &targetroot,
+                &tmpdir,
                 &dir3,
                 "kernel",
                 cargo_verbose,
             )?;
 
-            std::fs::remove_file(dir3.join("memory.x")).into_diagnostic()?;
+            std::fs::remove_file(tmpdir.join("memory.x")).into_diagnostic()?;
+
+            banner(format!("Build complete! Products in: {}", dir3.display()));
 
             Ok(())
         }
@@ -517,6 +524,10 @@ fn main() -> miette::Result<()> {
             }
             rows.sort();
             let mut table = comfy_table::Table::new();
+            table.load_preset(comfy_table::presets::NOTHING);
+            table.set_header(["START", "END (ex)", "OWNER"]);
+            table.column_mut(0).unwrap().set_cell_alignment(comfy_table::CellAlignment::Right);
+            table.column_mut(1).unwrap().set_cell_alignment(comfy_table::CellAlignment::Right);
             for row in rows {
                 table.add_row([
                     format!("{:#x}", row.0),
@@ -749,12 +760,14 @@ enum LinkStyle {
     Full,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn do_cargo_build(
     linker_script: &Path,
     plan: &BuildPlan,
     link_style: LinkStyle,
     targetroot: &Path,
-    workdir: &Path,
+    tmpdir: &Path,
+    outdir: &Path,
     product_name: &str,
     cargo_verbose: bool,
 ) -> miette::Result<()> {
@@ -784,10 +797,10 @@ fn do_cargo_build(
         cmd.arg(format!("+{tc}"));
     }
 
-    let linker_script_copy = workdir.join("link.x");
+    let linker_script_copy = tmpdir.join("link.x");
 
     let mut rustflags = format!("-C link-arg=-L{} -C link-arg=-T{}{}",
-            workdir.display(),
+            tmpdir.display(),
             linker_script_copy.display(),
             match link_style {
                 LinkStyle::Partial => " -C link-arg=-r",
@@ -818,8 +831,8 @@ fn do_cargo_build(
             cmd.args(["--git", repo]);
             cmd.args(["--rev", rev]);
 
-            let mut installroot = workdir.join(format!("{product_name}.cargo-install"));
-            let targetdir = workdir.join(format!("{product_name}.cargo-target"));
+            let mut installroot = tmpdir.join(format!("{product_name}.cargo-install"));
+            let targetdir = tmpdir.join(format!("{product_name}.cargo-target"));
 
             cmd.arg("--root");
             cmd.arg(&installroot);
@@ -863,7 +876,7 @@ fn do_cargo_build(
 
     std::fs::remove_file(linker_script_copy).into_diagnostic()?;
 
-    let final_path = workdir.join(product_name);
+    let final_path = outdir.join(product_name);
     std::fs::copy(&product_path, &final_path).into_diagnostic()
         .with_context(|| format!("copying {} to {}", product_path.display(), final_path.display()))?;
 
