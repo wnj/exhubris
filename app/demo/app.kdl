@@ -47,12 +47,7 @@ task "ping" {
 
 // Idle task. This must be the lowest priority task.
 task "idle" {
-    git-crate {
-        repo "https://github.com/oxidecomputer/hubris"
-        package "task-idle"
-        rev "7fcfe60dda83e1051bce8c535b0a8cf5c6065ab4"
-    }
-    toolchain "nightly-2024-09-17"
+    workspace-crate "idle"
     stack-size 128
     priority 4
 }
