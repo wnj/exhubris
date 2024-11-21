@@ -1,0 +1,16 @@
+[package]
+name = "drv-stm32g0-sys"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
+
+[dependencies]
+stm32-metapac = "15.0.0"
+userlib = {workspace = true, features = ["no-panic"]}
+
+[[bin]]
+name = "drv-stm32g0-sys"
+test = false
+bench = false

@@ -22,18 +22,27 @@ task "super" {
     priority 0
 }
 
+task "sys" {
+    workspace-crate "drv-stm32g0-sys"
+    stack-size 128
+    priority 1
+    features "chip-stm32g031k8"
+    uses-peripheral "rcc"
+    uses-peripheral "gpios"
+}
+
 // IPC server. This must be at index 1 for ping to find it, currently.
 task "pong" {
     workspace-crate "pong"
     stack-size 256
-    priority 0
+    priority 2
 }
 
 // IPC generator. This can be in any position.
 task "ping" {
     workspace-crate "ping"
     stack-size 256
-    priority 1
+    priority 3
 }
 
 // Idle task. This must be the lowest priority task.
@@ -45,5 +54,5 @@ task "idle" {
     }
     toolchain "nightly-2024-09-17"
     stack-size 128
-    priority 2
+    priority 4
 }

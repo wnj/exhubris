@@ -11,9 +11,27 @@ use userlib::TaskId;
 
 #[export_name = "main"]
 fn main() -> ! {
-    // TODO: we're assuming pong is at task index 1, which is not true in the
+    // TODO need task slots or equivalent
+    let mut sys = TaskId::gen0(1);
+    loop {
+        let r = userlib::sys_send(
+            sys,
+            0, // set pin to output
+            &(0b10_0110_u16).to_le_bytes(), // GPIO port C6
+            &mut [],
+            &mut [],
+        );
+        match r {
+            Ok((_, _)) => break,
+            Err(dead) => {
+                sys = sys.with_generation(dead.new_generation());
+            }
+        }
+    }
+
+    // TODO: we're assuming pong is at task index 2, which is not true in the
     // general case.
-    let mut pong = TaskId::gen0(1);
+    let mut pong = TaskId::gen0(2);
 
     // Arbitrarily chosen operation code:
     let ping_op: u16 = 1;
@@ -29,6 +47,7 @@ fn main() -> ! {
     let mut next_send = userlib::sys_get_timer().now;
 
     const INTERVAL: u64 = 5;
+    let mut send_count = 0;
 
     loop {
         userlib::sys_set_timer(Some(next_send), 1);
@@ -57,10 +76,30 @@ fn main() -> ! {
             Ok((_retval, _response_len)) => {
                 // TODO consider panicking here if the results are wrong, to
                 // help test the syscall interface?
+                send_count += 1;
             }
             Err(dead) => {
                 // Update generation to handle pong crash
                 pong = pong.with_generation(dead.new_generation());
+            }
+        }
+
+        if send_count == 100 {
+            send_count = 0;
+            loop {
+                let r = userlib::sys_send(
+                    sys,
+                    3, // toggle a pin
+                    &(0b10_0110_u16).to_le_bytes(), // GPIO port C6
+                    &mut [],
+                    &mut [],
+                );
+                match r {
+                    Ok((_, _)) => break,
+                    Err(dead) => {
+                        sys = sys.with_generation(dead.new_generation());
+                    }
+                }
             }
         }
     }
