@@ -6,14 +6,19 @@ memory {
     region "vectors" {
         base 0x0800_0000
         size 0x110 // enlarged to accommodate header
+        read
     }
     region "flash" {
         base 0x0800_0110
         size 0xFEF0
+        read
+        execute
     }
     region "ram" {
         base 0x2000_0000
         size 8192
+        read
+        write
     }
 }
 

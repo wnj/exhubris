@@ -274,14 +274,16 @@ fn main() -> miette::Result<()> {
                 };
 
                 for (name, reg) in task.owned_regions {
+                    let mem = &app.board.chip.memory[&name].value();
+
                     let size = (reg.range.end() - reg.range.start()) + 1;
                     config.owned_regions.insert(name, kconfig::MultiRegionConfig {
                         base: u32::try_from(*reg.range.start()).into_diagnostic()?,
                         sizes: vec![u32::try_from(size).into_diagnostic()?],
                         attributes: kconfig::RegionAttributes {
-                            read: true, // TODO
-                            write: true, // TODO
-                            execute: true, // TODO
+                            read: mem.read,
+                            write: mem.write,
+                            execute: mem.execute,
                             special_role: None, // TODO
                         },
                     });

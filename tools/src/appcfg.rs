@@ -81,6 +81,10 @@ pub struct RegionDef {
     pub base: Spanned<u64>,
     /// Size of the region in bytes.
     pub size: Spanned<u64>,
+
+    pub read: bool,
+    pub write: bool,
+    pub execute: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -567,8 +571,18 @@ fn parse_region(node: &KdlNode) -> miette::Result<Spanned<RegionDef>> {
                 )
             })
         })?;
+    let read = get_unique_bool(doc, "read")?;
+    let write = get_unique_bool(doc, "write")?;
+    let execute = get_unique_bool(doc, "execute")?;
 
-    Ok(Spanned::new(RegionDef { base, size }, *node.span()))
+    let region = RegionDef {
+        base,
+        size,
+        read,
+        write,
+        execute,
+    };
+    Ok(Spanned::new(region, *node.span()))
 }
 
 fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
