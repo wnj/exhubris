@@ -19,11 +19,18 @@ struct Tool {
 
 #[derive(Parser)]
 enum Cmd {
+    /// Builds a Hubris application, given a path to its config and the location
+    /// of the workspace root.
     Build {
+        /// Location of the workspace root. This will be used to search for chip
+        /// and board files.
         #[clap(short, long)]
         root: PathBuf,
+        /// Path to the application definition.
         cfg_path: PathBuf,
 
+        /// Cause Cargo to become very chatty (passes the `--verbose` flag to
+        /// all Cargo commands)
         #[clap(long)]
         cargo_verbose: bool,
     },
@@ -763,7 +770,7 @@ fn do_cargo_build(
         cmd.env(k, v);
     }
 
-    println!("{cmd:?}");
+    //println!("{cmd:?}");
 
     std::fs::copy(
         linker_script,
