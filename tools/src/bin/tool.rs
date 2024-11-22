@@ -27,7 +27,7 @@ enum Cmd {
         #[clap(long)]
         cargo_verbose: bool,
     },
-    Pack {
+    PackHex {
         bindir: PathBuf,
         outpath: PathBuf,
 
@@ -345,7 +345,7 @@ fn main() -> miette::Result<()> {
 
             Ok(())
         }
-        Cmd::Pack { bindir, outpath, gdbconfig } => {
+        Cmd::PackHex { bindir, outpath, gdbconfig } => {
             let mut overall_segments = RangeMap::new();
             let mut protohex = vec![];
             let mut start = None;
