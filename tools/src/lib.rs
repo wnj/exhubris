@@ -1,6 +1,6 @@
 pub mod appcfg;
 
-use std::{error::Error, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 use cargo_metadata::Package;
 use miette::{bail, miette, IntoDiagnostic as _, SourceSpan};

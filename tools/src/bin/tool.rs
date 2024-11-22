@@ -1,15 +1,13 @@
-use std::{collections::{BTreeMap, BTreeSet}, fmt::Write as _, fs, io::{ErrorKind, Write as _}, ops::RangeInclusive, path::{Path, PathBuf}, process::Command, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::{Range, RangeInclusive}, path::{Path, PathBuf}, process::Command, sync::Arc};
 
-use cargo_metadata::Package;
 use clap::Parser;
 use comfy_table::CellAlignment;
 use goblin::elf::program_header::PT_LOAD;
 use indexmap::IndexMap;
-use kdl::{KdlDocument, KdlNode, KdlValue};
-use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, Report, SourceSpan};
+use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use tools::appcfg::{AppDef, BuildMethod, BuildPlan, KernelDef, RegionDef};
+use tools::{appcfg::{AppDef, BuildMethod, BuildPlan, KernelDef, RegionDef}, BuildEnv};
 
 use hubris_build_kconfig as kconfig;
 
@@ -43,6 +41,7 @@ fn main() -> miette::Result<()> {
 
     match args.cmd {
         Cmd::Build { cfg_path, root, cargo_verbose } => {
+            // Canonicalize directories and locate/parse input files.
             let root = root.canonicalize().into_diagnostic()?;
             let doc_src = fs::read_to_string(&cfg_path)
                 .into_diagnostic()
@@ -57,6 +56,7 @@ fn main() -> miette::Result<()> {
             let ctx = tools::appcfg::FsContext::from_root(&root);
             let app = tools::appcfg::parse_app(source, &doc, &ctx)?;
 
+            // See if we understand this target.
             let target_spec = get_target_spec(app.board.chip.target_triple.value())
                 .ok_or_else(|| {
                     miette!(
@@ -68,9 +68,11 @@ fn main() -> miette::Result<()> {
                     )
                 })?;
 
-
+            // Interrogate the installed toolchain to discover things like the
+            // linker path.
             let env = tools::determine_build_env()?;
 
+            // Print the kickoff header:
             simple_table([
                 ("App name", app.name.value().as_str()),
                 ("Config path", &cfg_path.display().to_string()),
@@ -78,18 +80,24 @@ fn main() -> miette::Result<()> {
                 ("Host platform", &env.host_triple),
                 ("Default toolchain", &env.release),
             ]);
-            println!();
 
+            // Analyze the app and make a build plan.
             let overall_plan = tools::appcfg::plan_build(&app)?;
+            // Locate the workspace Cargo target directory.
             let targetroot = root.join("target");
+            // Create our working directory.
             let workdir = root.join(".work").join(app.name.value());
             maybe_create_dir(&workdir).into_diagnostic()?;
 
+            // Create our tmp directory, which we'll use for short-lived files
+            // during the build process.
             let tmpdir = workdir.join("tmp");
             maybe_create_dir(&tmpdir).into_diagnostic()?;
 
-            let dir1 = workdir.join("build");
-            maybe_create_dir(&dir1).into_diagnostic()?;
+            // Create our initial build directory, where we deposit
+            // partially-linked task binaries.
+            let initial_build_dir = workdir.join("build");
+            maybe_create_dir(&initial_build_dir).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
                 do_cargo_build(
                     &root.join("task-rlink.x"),
@@ -97,84 +105,31 @@ fn main() -> miette::Result<()> {
                     LinkStyle::Partial,
                     &targetroot,
                     &tmpdir,
-                    &dir1,
+                    &initial_build_dir,
                     name,
                     cargo_verbose,
                 )?;
             }
 
+            // Begin the second link phase...
             banner("Task build complete, prelinking for size...");
+
             std::fs::copy(root.join("task-link2.x"), targetroot.join("task-link2.x")).into_diagnostic()?;
-            let mut size_reqs: BTreeMap<&str, IndexMap<&str, u64>> = BTreeMap::new();
-            let dir2 = workdir.join("link2");
-            maybe_create_dir(&dir2).into_diagnostic()?;
-            for (taskname, plan) in &overall_plan.tasks {
-                let linker_script_path = targetroot.join("memory.x");
-                let mut scr = std::fs::File::create(&linker_script_path)
-                    .into_diagnostic()?;
-                writeln!(scr, "MEMORY {{").into_diagnostic()?;
-                let def = &app.tasks[taskname];
-                for (name, range) in &app.board.chip.memory {
-                    let name = name.to_ascii_uppercase();
-                    let RegionDef { base, size } = range.value().clone();
-                    let mut base = *base.value();
-                    let mut size = *size.value();
-                    if name == "RAM" {
-                        // deduct stack
-                        
-                        writeln!(scr, "STACK (rw): ORIGIN = {base:#x}, LENGTH = {:#x}", def.stack_size.value()).into_diagnostic()?;
-                        base += *def.stack_size.value();
-                        size -= *def.stack_size.value();
-                    }
-                    writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
-                }
-                writeln!(scr, "}}").into_diagnostic()?;
-                let mut ldcmd = Command::new(&env.linker_path);
-                let outpath = dir1.join(taskname);
-                let outpath2 = dir2.join(taskname);
-                ldcmd.arg(outpath);
-                ldcmd.arg("-o").arg(&outpath2);
-                ldcmd.arg("-Ttask-link2.x");
-                ldcmd.arg("--gc-sections");
-                ldcmd.arg("-m").arg("armelf");
-                ldcmd.args(["-z", "common-page-size=0x20"]);
-                ldcmd.args(["-z", "max-page-size=0x20"]);
-                ldcmd.current_dir(&targetroot);
-                let ldstatus = ldcmd.status().into_diagnostic()?;
-                if !ldstatus.success() {
-                    return Err(miette!("command failed"));
-                }
+            let mut size_reqs: BTreeMap<String, IndexMap<&str, u64>> = BTreeMap::new();
+            let temp_link_dir = workdir.join("link2");
+            maybe_create_dir(&temp_link_dir).into_diagnostic()?;
+            for taskname in overall_plan.tasks.keys() {
+                let region_sizes = relink_for_size(
+                    &env,
+                    &app,
+                    &target_spec,
+                    &targetroot,
+                    taskname,
+                    &initial_build_dir.join(taskname),
+                    &temp_link_dir.join(taskname),
+                    &root.join("task-link2.x"),
+                )?;
 
-                std::fs::remove_file(linker_script_path).into_diagnostic()?;
-
-                let file_image = std::fs::read(&outpath2).into_diagnostic()?;
-                let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
-
-                let mut region_sizes = app.board.chip.memory.iter()
-                    .map(|(name, region)| (name, *region.value().base.value()..*region.value().base.value()))
-                    .collect::<BTreeMap<_, _>>();
-                for phdr in &elf.program_headers {
-                    if phdr.p_type != PT_LOAD {
-                        continue;
-                    }
-                    let (regname, _reg) = app.board.chip.memory.iter()
-                        .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_vaddr && (phdr.p_vaddr + phdr.p_memsz) <= (reg.value().base.value() + reg.value().size.value()))
-                        .expect("internal inconsistency");
-
-                    let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
-                    sz.start = u64::min(sz.start, phdr.p_vaddr);
-                    sz.end = u64::max(sz.end, phdr.p_vaddr + phdr.p_memsz);
-
-                    if phdr.p_vaddr != phdr.p_paddr {
-                        let (regname, _reg) = app.board.chip.memory.iter()
-                            .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_vaddr && (phdr.p_paddr + phdr.p_filesz) <= (reg.value().base.value() + reg.value().size.value()))
-                            .expect("internal inconsistency");
-
-                        let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
-                        sz.start = u64::min(sz.start, phdr.p_paddr);
-                        sz.end = u64::min(sz.end, phdr.p_paddr + phdr.p_filesz);
-                    }
-                }
                 for (region, range) in region_sizes {
                     let size = range.end - range.start;
                     size_reqs.entry(region).or_default().insert(taskname, size);
@@ -254,82 +209,20 @@ fn main() -> miette::Result<()> {
             }
             maybe_create_dir(&dir3).into_diagnostic()?;
             let mut built_tasks = vec![];
-            for (taskname, plan) in &overall_plan.tasks {
-                let linker_script_path = targetroot.join("memory.x");
-                let mut scr = std::fs::File::create(&linker_script_path)
-                    .into_diagnostic()?;
-                writeln!(scr, "MEMORY {{").into_diagnostic()?;
-                let def = &app.tasks[taskname];
-                let tallocs = &allocs.tasks[taskname];
+            for taskname in overall_plan.tasks.keys() {
+                let built_task = relink_final(
+                    &env,
+                    &app,
+                    &target_spec,
+                    &targetroot,
+                    taskname,
+                    &initial_build_dir.join(taskname),
+                    &dir3.join(taskname),
+                    &root.join("task-link3.x"),
+                    &allocs.tasks[taskname],
+                ).with_context(|| format!("failed final link for task {taskname}"))?;
 
-                let mut initial_stack_pointer = None;
-                let mut owned_regions = BTreeMap::new();
-                for orig_name in app.board.chip.memory.keys() {
-                    let Some(regalloc) = tallocs.get(orig_name) else {
-                        continue;
-                    };
-
-                    owned_regions.insert(orig_name.to_string(), OwnedRegion {
-                        range: regalloc.actual.clone(),
-                    });
-
-                    let name = orig_name.to_ascii_uppercase();
-                    let mut base = *regalloc.actual.start();
-                    let mut size = (regalloc.actual.end() - regalloc.actual.start()) + 1;
-
-                    if name == "RAM" {
-                        // deduct stack
-                        
-                        writeln!(scr, "STACK (rw): ORIGIN = {base:#x}, LENGTH = {:#x}", def.stack_size.value()).into_diagnostic()?;
-                        base += *def.stack_size.value();
-                        size -= *def.stack_size.value();
-                        initial_stack_pointer = Some(OwnedAddress {
-                            region: orig_name.to_string(),
-                            offset: *def.stack_size.value(),
-                        });
-                    }
-                    writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
-                }
-                writeln!(scr, "}}").into_diagnostic()?;
-                drop(scr);
-                let mut ldcmd = Command::new(&env.linker_path);
-                let outpath = dir1.join(taskname);
-                let outpath2 = dir3.join(taskname);
-                ldcmd.arg(outpath);
-                ldcmd.arg("-o").arg(&outpath2);
-                ldcmd.arg("-Ttask-link3.x");
-                ldcmd.arg("--gc-sections");
-                ldcmd.arg("-m").arg("armelf");
-                ldcmd.args(["-z", "common-page-size=0x20"]);
-                ldcmd.args(["-z", "max-page-size=0x20"]);
-                ldcmd.current_dir(&targetroot);
-                let ldstatus = ldcmd.status().into_diagnostic()?;
-                if !ldstatus.success() {
-                    return Err(miette!("command failed"));
-                }
-
-                std::fs::remove_file(linker_script_path).into_diagnostic()?;
-                let file_image = std::fs::read(&outpath2).into_diagnostic()?;
-                let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
-
-                let entry_region = owned_regions.iter()
-                    .find(|(_name, reg)| elf.entry >= *reg.range.start()
-                        && elf.entry <= *reg.range.end());
-                let entry_region = entry_region.expect("invalid entry point");
-
-                let entry = OwnedAddress {
-                    region: entry_region.0.to_string(),
-                    offset: elf.entry - entry_region.1.range.start(),
-                };
-                let initial_stack_pointer = initial_stack_pointer.expect("missing RAM region?");
-
-                built_tasks.push(BuiltTask {
-                    name: taskname.to_string(),
-                    path: outpath2,
-                    entry,
-                    initial_stack_pointer,
-                    owned_regions,
-                });
+                built_tasks.push(built_task);
             }
 
             let shared_regions = app.board.chip.peripherals.iter()
@@ -590,6 +483,8 @@ struct TargetSpec {
     alloc_minimum: u64,
     /// Stack alignment requirement in bytes.
     stack_align: u64,
+    /// BFD architecture name.
+    bfd_name: String,
 }
 
 impl TargetSpec {
@@ -632,6 +527,13 @@ fn get_target_spec(triple: &str) -> Option<TargetSpec> {
             size_rule: SizeRule::PowerOfTwo,
             alloc_minimum: 32,
             stack_align: 8,
+            bfd_name: "armelf".to_string(),
+        }),
+        "thumbv8m.main-none-eabihf" => Some(TargetSpec {
+            size_rule: SizeRule::MultipleOf(32),
+            alloc_minimum: 32,
+            stack_align: 8,
+            bfd_name: "armelf".to_string(),
         }),
         _ => None,
     }
@@ -678,7 +580,7 @@ impl Default for KernelAllocation {
 fn allocate_space(
     target_spec: &TargetSpec,
     available: &IndexMap<String, tools::appcfg::Spanned<RegionDef>>,
-    required: &BTreeMap<&str, IndexMap<&str, u64>>,
+    required: &BTreeMap<String, IndexMap<&str, u64>>,
     kernel: &KernelDef,
 ) -> miette::Result<Allocations> {
     let mut results = Allocations::default();
@@ -739,7 +641,6 @@ fn maybe_create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
 
 struct BuiltTask {
     name: String,
-    path: PathBuf,
     entry: OwnedAddress,
     initial_stack_pointer: OwnedAddress,
     owned_regions: BTreeMap<String, OwnedRegion>,
@@ -914,3 +815,160 @@ fn simple_table<'a>(content: impl IntoIterator<Item = (&'a str, &'a str)>) {
     println!("{table}");
     println!();
 }
+
+#[allow(clippy::too_many_arguments)]
+fn relink(
+    env: &BuildEnv,
+    app: &AppDef,
+    target: &TargetSpec,
+    targetroot: &Path,
+    taskname: &str,
+    inpath: &Path,
+    outpath: &Path,
+    linker_script: &Path,
+    alloc: &BTreeMap<String, TaskAllocation>,
+) -> miette::Result<(BTreeMap<String, OwnedRegion>, Option<OwnedAddress>)> {
+    let memory_frag_path = targetroot.join("memory.x");
+    let mut scr = std::fs::File::create(&memory_frag_path)
+        .into_diagnostic()?;
+    writeln!(scr, "MEMORY {{").into_diagnostic()?;
+    let def = &app.tasks[taskname];
+    let mut initial_stack_pointer = None;
+    let mut owned_regions = BTreeMap::new();
+    for orig_name in app.board.chip.memory.keys() {
+        let Some(regalloc) = alloc.get(orig_name) else {
+            continue;
+        };
+
+        owned_regions.insert(orig_name.to_string(), OwnedRegion {
+            range: regalloc.actual.clone(),
+        });
+
+        let name = orig_name.to_ascii_uppercase();
+        let mut base = *regalloc.actual.start();
+        let mut size = (regalloc.actual.end() - regalloc.actual.start()) + 1;
+
+        if name == "RAM" {
+            // deduct stack
+
+            writeln!(scr, "STACK (rw): ORIGIN = {base:#x}, LENGTH = {:#x}", def.stack_size.value()).into_diagnostic()?;
+            base += *def.stack_size.value();
+            size -= *def.stack_size.value();
+            initial_stack_pointer = Some(OwnedAddress {
+                region: orig_name.to_string(),
+                offset: *def.stack_size.value(),
+            });
+        }
+        writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
+    }
+    writeln!(scr, "}}").into_diagnostic()?;
+    drop(scr);
+
+    let mut ldcmd = Command::new(&env.linker_path);
+    ldcmd.arg(inpath);
+    ldcmd.arg("-o").arg(outpath);
+    ldcmd.arg(format!("-T{}", linker_script.display()));
+    ldcmd.arg("--gc-sections");
+    ldcmd.args(["-m", &target.bfd_name]);
+
+    // TODO: are these still necessary?
+    ldcmd.args(["-z", "common-page-size=0x20"]);
+    ldcmd.args(["-z", "max-page-size=0x20"]);
+
+    ldcmd.current_dir(targetroot);
+
+    let ldstatus = ldcmd.status().into_diagnostic()?;
+    if !ldstatus.success() {
+        return Err(miette!("command failed"));
+    }
+
+    std::fs::remove_file(memory_frag_path).into_diagnostic()?;
+    Ok((owned_regions, initial_stack_pointer))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn relink_for_size(
+    env: &BuildEnv,
+    app: &AppDef,
+    target: &TargetSpec,
+    targetroot: &Path,
+    taskname: &str,
+    inpath: &Path,
+    outpath: &Path,
+    linker_script: &Path,
+) -> miette::Result<BTreeMap<String, Range<u64>>> {
+    let alloc_everything = app.board.chip.memory.iter()
+        .map(|(name, regdef)| (name.clone(), TaskAllocation {
+            requested: 0,
+            actual: *regdef.value().base.value()..=regdef.value().base.value() + regdef.value().size.value() - 1,
+        }))
+    .collect();
+    relink(env, app, target, targetroot, taskname, inpath, outpath, linker_script, &alloc_everything)?;
+
+    let file_image = std::fs::read(outpath).into_diagnostic()?;
+    let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
+
+    let mut region_sizes = app.board.chip.memory.iter()
+        .map(|(name, region)| (name.clone(), *region.value().base.value()..*region.value().base.value()))
+        .collect::<BTreeMap<_, _>>();
+    for phdr in &elf.program_headers {
+        if phdr.p_type != PT_LOAD {
+            continue;
+        }
+        let (regname, _reg) = app.board.chip.memory.iter()
+            .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_vaddr && (phdr.p_vaddr + phdr.p_memsz) <= (reg.value().base.value() + reg.value().size.value()))
+            .expect("internal inconsistency");
+
+        let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
+        sz.start = u64::min(sz.start, phdr.p_vaddr);
+        sz.end = u64::max(sz.end, phdr.p_vaddr + phdr.p_memsz);
+
+        if phdr.p_vaddr != phdr.p_paddr {
+            let (regname, _reg) = app.board.chip.memory.iter()
+                .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_vaddr && (phdr.p_paddr + phdr.p_filesz) <= (reg.value().base.value() + reg.value().size.value()))
+                .expect("internal inconsistency");
+
+            let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
+            sz.start = u64::min(sz.start, phdr.p_paddr);
+            sz.end = u64::min(sz.end, phdr.p_paddr + phdr.p_filesz);
+        }
+    }
+    Ok(region_sizes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn relink_final(
+    env: &BuildEnv,
+    app: &AppDef,
+    target: &TargetSpec,
+    targetroot: &Path,
+    taskname: &str,
+    inpath: &Path,
+    outpath: &Path,
+    linker_script: &Path,
+    alloc: &BTreeMap<String, TaskAllocation>,
+) -> miette::Result<BuiltTask> {
+    let (owned_regions, initial_stack_pointer) = relink(env, app, target, targetroot, taskname, inpath, outpath, linker_script, alloc)?;
+
+    let file_image = std::fs::read(outpath).into_diagnostic()?;
+    let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
+
+    let entry_region = owned_regions.iter()
+    .find(|(_name, reg)| elf.entry >= *reg.range.start()
+        && elf.entry <= *reg.range.end());
+    let entry_region = entry_region.expect("invalid entry point");
+
+    let entry = OwnedAddress {
+        region: entry_region.0.to_string(),
+        offset: elf.entry - entry_region.1.range.start(),
+    };
+    let initial_stack_pointer = initial_stack_pointer.expect("missing RAM region?");
+
+    Ok(BuiltTask {
+        name: taskname.to_string(),
+        entry,
+        initial_stack_pointer,
+        owned_regions,
+    })
+}
+

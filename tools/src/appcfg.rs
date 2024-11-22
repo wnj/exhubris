@@ -487,7 +487,16 @@ pub fn parse_kernel(
 
             match (workspace_crate, git) {
                 (Some(name), None) => name.map(|n| PackageSource::WorkspaceCrate { name: n }),
-                (None, Some(gitatts)) => todo!(),
+                (None, Some(gitatts)) => {
+                    let c = required_children(gitatts)?;
+                    let repo = get_unique_string_value(c, "repo")?.into_value();
+                    let name = get_unique_string_value(c, "package")?.into_value();
+                    let rev = get_unique_string_value(c, "rev")?.into_value();
+                    Spanned::new(
+                        PackageSource::GitCrate { repo, name, rev, },
+                        *gitatts.span(),
+                    )
+                }
                 (Some(a), Some(b)) => bail!(
                     labels=[
                         LabeledSpan::at(a.span(), "here"),
