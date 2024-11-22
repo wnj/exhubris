@@ -13,7 +13,7 @@ board {
 // Instructions for building the kernel.
 kernel {
     workspace-crate "kernel-generic-stm32g031"
-    stack-size 1024
+    stack-size 544
 }
 
 task "super" {
@@ -24,7 +24,7 @@ task "super" {
 
 task "sys" {
     workspace-crate "drv-stm32g0-sys"
-    stack-size 128
+    stack-size 160
     priority 1
     features "chip-stm32g031k8"
     uses-peripheral "rcc"
@@ -34,20 +34,20 @@ task "sys" {
 // IPC server. This must be at index 1 for ping to find it, currently.
 task "pong" {
     workspace-crate "pong"
-    stack-size 256
+    stack-size 160
     priority 2
 }
 
 // IPC generator. This can be in any position.
 task "ping" {
     workspace-crate "ping"
-    stack-size 256
+    stack-size 160
     priority 3
 }
 
 // Idle task. This must be the lowest priority task.
 task "idle" {
     workspace-crate "idle"
-    stack-size 128
+    stack-size 32
     priority 4
 }
