@@ -34,7 +34,7 @@ pub fn read_task_status(task_index: usize) -> TaskState {
 /// it's intended to be called from task 0, the supervisor.
 pub fn find_faulted_task(task_index: usize) -> Option<NonZeroUsize> {
     let mut response = [0; 4];
-    let (_, len) = userlib::sys_send_to_kernel(
+    let (_, _len) = userlib::sys_send_to_kernel(
         Kipcnum::FindFaultedTask as u16,
         &(task_index as u32).to_le_bytes(),
         &mut response,
