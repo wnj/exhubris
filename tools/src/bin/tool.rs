@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use tools::{appcfg::{AppDef, BuildMethod, BuildPlan, KernelDef, RegionDef}, BuildEnv};
+use tools::{alloc::{allocate_space, TaskAllocation}, appcfg::{AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
 
 use hubris_build_kconfig as kconfig;
 
@@ -180,11 +180,11 @@ fn main() -> miette::Result<()> {
                         if *range.start() != last + 1 {
                             dbg!(range.start());
                             dbg!(last);
-                            let pad_size = *range.start() - last;
+                            let pad_size = *range.start() - (last + 1);
                             table.add_row([
                                 region_name.to_string(),
                                 "-pad-".to_string(),
-                                format!("{last:#x}"),
+                                format!("{:#x}", last + 1),
                                 format!("{:#x}", *range.start() - 1),
                                 Size::from_bytes(pad_size).to_string(),
                                 Size::from_bytes(pad_size).to_string(),
@@ -475,169 +475,6 @@ pub fn guess_intent<'a>(
             None
         })
         .collect()
-}
-
-#[derive(Copy, Clone, Debug)]
-enum SizeRule {
-    /// Allocations must be a power-of-two in size.
-    PowerOfTwo,
-    /// Allocations must be an integer multiple of this number.
-    MultipleOf(u64),
-}
-
-struct TargetSpec {
-    /// Rule determining legal allocation sizes on this target.
-    size_rule: SizeRule,
-    /// Minimum allocation size on this target.
-    alloc_minimum: u64,
-    /// Stack alignment requirement in bytes.
-    stack_align: u64,
-    /// BFD architecture name.
-    bfd_name: String,
-}
-
-impl TargetSpec {
-    fn align_before_allocation(&self, addr: u64) -> u64 {
-        addr.next_multiple_of(self.alloc_minimum)
-    }
-
-    fn align_for_allocation_size(&self, addr: u64, size: u64) -> u64 {
-        let size = u64::max(size, self.alloc_minimum);
-        match self.size_rule {
-            SizeRule::PowerOfTwo => {
-                addr.next_multiple_of(size)
-            }
-            SizeRule::MultipleOf(n) => {
-                addr.next_multiple_of(n)
-            }
-        }
-    }
-
-    fn round_allocation_size(&self, size: u64) -> u64 {
-        let size = u64::max(size, self.alloc_minimum);
-        match self.size_rule {
-            SizeRule::PowerOfTwo => {
-                size.next_power_of_two()
-            }
-            SizeRule::MultipleOf(n) => {
-                size.next_multiple_of(n)
-            }
-        }
-    }
-
-    fn align_for_stack(&self, addr: u64) -> u64 {
-        addr.next_multiple_of(self.stack_align)
-    }
-}
-
-fn get_target_spec(triple: &str) -> Option<TargetSpec> {
-    match triple {
-        "thumbv6m-none-eabi" => Some(TargetSpec {
-            size_rule: SizeRule::PowerOfTwo,
-            alloc_minimum: 32,
-            stack_align: 8,
-            bfd_name: "armelf".to_string(),
-        }),
-        "thumbv8m.main-none-eabihf" => Some(TargetSpec {
-            size_rule: SizeRule::MultipleOf(32),
-            alloc_minimum: 32,
-            stack_align: 8,
-            bfd_name: "armelf".to_string(),
-        }),
-        _ => None,
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct Allocations {
-    tasks: IndexMap<String, BTreeMap<String, TaskAllocation>>,
-    kernel: KernelAllocation,
-}
-
-impl Allocations {
-    pub fn by_region(&self) -> BTreeMap<&str, IndexMap<&str, &TaskAllocation>> {
-        let mut pivot: BTreeMap<_, IndexMap<_, _>> = BTreeMap::new();
-        for (task_name, regions) in &self.tasks {
-            for (region_name, alloc) in regions {
-                pivot.entry(region_name.as_str())
-                    .or_default()
-                    .insert(task_name.as_str(), alloc);
-            }
-        }
-        pivot
-    }
-}
-
-#[derive(Clone, Debug)]
-struct TaskAllocation {
-    requested: u64,
-    actual: RangeInclusive<u64>,
-}
-
-#[derive(Clone, Debug)]
-struct KernelAllocation {
-    by_region: BTreeMap<String, RangeInclusive<u64>>,
-    stack: RangeInclusive<u64>,
-}
-
-impl Default for KernelAllocation {
-    fn default() -> Self {
-        Self { by_region: Default::default(), stack: 0..=0 }
-    }
-}
-
-fn allocate_space(
-    target_spec: &TargetSpec,
-    available: &IndexMap<String, tools::appcfg::Spanned<RegionDef>>,
-    required: &BTreeMap<String, IndexMap<&str, u64>>,
-    kernel: &KernelDef,
-) -> miette::Result<Allocations> {
-    let mut results = Allocations::default();
-
-    for (region_name, region) in available {
-        let Some(reqs) = required.get(region_name.as_str()) else {
-            continue;
-        };
-        let is_ram = region_name.eq_ignore_ascii_case("RAM");
-        // Sort requests for this region in descending size order. TODO: this is
-        // an approximation of the right approach.
-        let mut reqs = reqs.iter().collect::<Vec<_>>();
-        reqs.sort_by_key(|(_name, size)| *size);
-        reqs.reverse();
-
-        // Attempt to satisfy each request.
-        let orig_addr = *region.value().base.value();
-        let end = orig_addr + *region.value().size.value();
-        let mut addr = target_spec.align_before_allocation(orig_addr);
-        if is_ram {
-            addr = target_spec.align_for_stack(addr);
-            results.kernel.stack = addr..=addr + (kernel.stack_size.value() - 1);
-            addr += kernel.stack_size.value();
-            addr = target_spec.align_for_stack(addr);
-        }
-        if orig_addr != addr {
-            eprintln!("warning: adjusted region {region_name} base up to {addr:#x} from {orig_addr:#x}");
-        }
-
-        for (taskname, requested_size) in reqs {
-            if *requested_size == 0 {
-                continue;
-            }
-            let size = target_spec.round_allocation_size(*requested_size);
-            addr = target_spec.align_for_allocation_size(addr, size);
-            results.tasks.entry(taskname.to_string())
-                .or_default()
-                .insert(region_name.clone(), TaskAllocation {
-                    requested: *requested_size,
-                    actual: addr..=addr + (size - 1),
-                });
-            addr += size;
-        }
-
-        results.kernel.by_region.insert(region_name.to_string(), addr..=end - 1);
-    }
-
-    Ok(results)
 }
 
 fn maybe_create_dir(path: impl AsRef<Path>) -> std::io::Result<()> {
