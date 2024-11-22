@@ -121,7 +121,6 @@ fn main() -> miette::Result<()> {
             // Begin the second link phase...
             banner("Task build complete, prelinking for size...");
 
-            std::fs::copy(root.join("task-link2.x"), targetroot.join("task-link2.x")).into_diagnostic()?;
             let mut size_reqs: BTreeMap<String, IndexMap<&str, u64>> = BTreeMap::new();
             let temp_link_dir = workdir.join("link2");
             maybe_create_dir(&temp_link_dir).into_diagnostic()?;
@@ -207,7 +206,6 @@ fn main() -> miette::Result<()> {
             }
             println!("{table}");
             
-            std::fs::copy(root.join("task-link3.x"), targetroot.join("task-link3.x")).into_diagnostic().context("copying link3")?;
             let dir3 = workdir.join("final");
             match std::fs::remove_dir_all(&dir3) {
                 Ok(()) => (),
