@@ -2,19 +2,18 @@ use core::arch::global_asm;
 use core::mem::MaybeUninit;
 use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings, ReplyFaultReason};
 
-pub(crate) fn idle() {
-    cortex_m::asm::wfi();
+extern "Rust" {
+    /// Unresolved symbol for the application main function.
+    fn main() -> !;
 }
 
-#[repr(C)]
-struct SendArgs {
-    target_and_operation: u32,
-    outgoing_base: *const u8,
-    outgoing_len: usize,
-    incoming_base: *mut u8,
-    incoming_len: usize,
-    lease_base: *const AbiLease,
-    lease_count: usize,
+extern "C" {
+    /// Our actual startup routine.
+    fn _start() -> !;
+}
+
+pub(crate) fn idle() {
+    cortex_m::asm::wfi();
 }
 
 #[inline(always)]
@@ -28,7 +27,7 @@ pub fn sys_send(
     let target_and_operation = u32::from(target.0) << 16
             | u32::from(operation);
     let ret64 = unsafe {
-        sys_send_stub2(
+        sys_send_stub(
             target_and_operation,
             outgoing.as_ptr(),
             outgoing.len(),
@@ -56,7 +55,7 @@ pub fn sys_send_to_kernel(
     let target_and_operation = u32::from(TaskId::KERNEL.0) << 16
             | u32::from(operation);
     let ret64 = unsafe {
-        sys_send_stub2(
+        sys_send_stub(
             target_and_operation,
             outgoing.as_ptr(),
             outgoing.len(),
@@ -75,64 +74,6 @@ global_asm!("
 .globl sys_send_stub
 .type sys_send_stub,function
 sys_send_stub:
-    .cfi_startproc
-
-    @ Stash the register values we're about to destroy.
-    push {{r4-r7, lr}}
-    .cfi_adjust_cfa_offset 20
-    .cfi_offset r4, -20
-    .cfi_offset r5, -16
-    .cfi_offset r6, -12
-    .cfi_offset r7, -8
-    .cfi_offset lr, -4
-
-    mov r4, r8
-    mov r5, r9
-    mov r6, r10
-    mov r7, r11
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -36
-    .cfi_offset r5, -32
-    .cfi_offset r6, -28
-    .cfi_offset r7, -24
-    
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
-
-    @ Load arguments from the parameter struct.
-    ldm r0!, {{r4-r7}}
-    ldm r0, {{r0-r2}}
-    mov r8, r0
-    mov r9, r1
-    mov r10, r2
-
-    svc #0
-
-    @ Put the results into the function return position.
-    mov r0, r4
-    mov r1, r5
-    @ Restore the registers.
-    pop {{r4-r7}}
-    .cfi_adjust_cfa_offset -16
-    mov r8, r4
-    mov r9, r5
-    mov r10, r6
-    mov r11, r7
-    pop {{r4-r7, pc}}
-
-    .cfi_endproc
-",
-    sysnum = const Sysnum::Send as u32,
-);
-
-global_asm!("
-.section .text.sys_send_stub2
-.globl sys_send_stub2
-.type sys_send_stub2,function
-sys_send_stub2:
     .cfi_startproc
 
     @ We get the first four arguments in r0-r3, and the next three on the stack.
@@ -198,6 +139,11 @@ sys_send_stub2:
     sysnum = const Sysnum::Send as u32,
 );
 
+/// A version of `RecvMessage` that is shaped exactly like the return registers
+/// after a call to `recv`.
+///
+/// This lets us blit the return registers directly into this struct from the
+/// assembly stub without having to think too much.
 #[repr(C)]
 struct AbiRecvMessage {
     sender: u32,
@@ -631,6 +577,11 @@ pub fn sys_set_timer(
     }
 }
 
+/// A version of `TimerSettings` with its fields in exactly the order of the
+/// return registers after a `get-timer` call.
+///
+/// This ensures that we can blit the return registers into this directly from
+/// the asm stub, without having to think too much.
 #[repr(C)]
 struct AbiTimerSettings {
     now: [u32; 2],
@@ -712,13 +663,24 @@ sys_get_timer_stub:
 
 
 extern "C" {
+    /// Low-level send syscall stub.
+    ///
     /// # Safety
     ///
-    /// The pointers in the SendArgs struct must be valid for read (outgoing,
-    /// lease table) or write (incoming).
-    fn sys_send_stub(_msg: &mut SendArgs) -> u64;
-
-    fn sys_send_stub2(
+    /// To use this safely, all of the (base,len) pointers must meet the
+    /// validity rules for slice references. The easiest way to ensure this is
+    /// to derive them directly from slice references.
+    ///
+    /// This also implies that the outgoing, incoming, and lease regions may not
+    /// overlap.
+    ///
+    /// As an optimization, the memory pointed to by `incoming_base` need not be
+    /// initialized, and so it is safe to have derived the `incoming_base`
+    /// pointer from an array of `MaybeUninit<u8>`. Once this returns, you can
+    /// assume that the _prefix_ of the `incoming` slice up to the response
+    /// length has been initialized. The tail of that buffer may _not_ have been
+    /// initialized.
+    fn sys_send_stub(
         target_and_operation: u32,
         outgoing_base: *const u8,
         outgoing_len: usize,
@@ -728,6 +690,21 @@ extern "C" {
         lease_count: usize,
     ) -> u64;
 
+    /// Low-level recv syscall stub.
+    ///
+    /// # Safety
+    ///
+    /// To use this safely, the incoming base/len pointers must meet the
+    /// validity rules for a slice reference. The easiest way to ensure this is
+    /// to derive them directly from a slice reference.
+    ///
+    /// This also implies that the `incoming` slice and `out` pointee may not
+    /// overlap.
+    ///
+    /// As an optimization, the memory pointed to by `out` need not be
+    /// initialized, and so it is safe to have derived the `out` pointer from a
+    /// `MaybeUninit<AbiRecvMessage>`. Once this returns, you can assume the
+    /// memory has been initialized.
     fn sys_recv_stub(
         incoming_base: *mut u8,
         incoming_len: usize,
@@ -736,6 +713,13 @@ extern "C" {
         out: *mut AbiRecvMessage,
     ) -> u32;
 
+    /// Low-level reply syscall stub.
+    ///
+    /// # Safety
+    ///
+    /// To use this safely, the `outgoing` base/len pair must meet the validity
+    /// rules for a slice reference. The easiest way to ensure this is to derive
+    /// them directly from a slice reference.
     fn sys_reply_stub(
         sender: u32,
         code: u32,
@@ -743,20 +727,35 @@ extern "C" {
         outgoing_len: usize,
     );
 
+    /// Low level reply-fault syscall stub.
+    ///
+    /// # Safety
+    ///
+    /// This operation has no safety implications. It's only considered `unsafe`
+    /// by Rust because it's `extern "C"`. Have fun.
     fn sys_reply_fault_stub(
         sender: u32,
         reason: u32,
     );
 
+    /// Low-level panic syscall stub.
+    ///
     /// # Safety
     ///
     /// The pointer/length passed to this function must be valid.
     ///
     /// Well, strictly speaking, they don't, at least not from Rust's
     /// perspective. They will not be dereferenced in this lifetime. They're
-    /// just sent to the kernel. But, it's a good idea to use valid pointers.
+    /// just sent to the kernel. But, it's a good idea to use valid pointers in
+    /// case somebody wants to read your string after your death.
     fn sys_panic_stub(_msg: *const u8, _len: usize) -> !;
 
+    /// Low-level set-timer syscall stub.
+    ///
+    /// # Safety
+    ///
+    /// This is only considered "unsafe" by Rust because it's `extern "C"`.
+    /// Calling this has no safety implications. Have fun.
     fn sys_set_timer_stub(
         enable: u32,
         raw_deadline_lo: u32,
@@ -764,13 +763,13 @@ extern "C" {
         notifications: u32,
     );
 
+    /// Low-level get-timer syscall stub.
+    ///
+    /// # Safety
+    ///
+    /// This is only considered "unsafe" by Rust because it's `extern "C"`.
+    /// Calling this has no safety implications. Have fun.
     fn sys_get_timer_stub() -> AbiTimerSettings;
-
-    pub fn _start() -> !;
-}
-
-extern "Rust" {
-    fn main() -> !;
 }
 
 cfg_if::cfg_if! {
