@@ -16,13 +16,15 @@ fn main() -> ! {
         // in an attempt to convince us that something has died. Either way.
 
         // find_faulted_task(i) scans for the first task at an index greater
-        // than i that has failed. Since we are task 0, we start out with i=0,
-        // skipping ourselves.
+        // than or equal to i that has failed. Since we are task 0, we start out
+        // with i=1, skipping ourselves.
 
-        let mut i = 0;
-        while let Some(i2) = kipc::find_faulted_task(i) {
-            i = usize::from(i2);
-            kipc::reinitialize_task(i, kipc::NewState::Runnable);
+        let mut next_task = 1;
+        while let Some(fault_index) = kipc::find_faulted_task(next_task) {
+            let fault_index = usize::from(fault_index);
+            kipc::reinitialize_task(fault_index, kipc::NewState::Runnable);
+            // keep moving
+            next_task = fault_index + 1;
         }
     }
 }

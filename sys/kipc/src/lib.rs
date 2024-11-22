@@ -27,7 +27,7 @@ pub fn read_task_status(task_index: usize) -> TaskState {
     }
 }
 
-/// Scans tasks after `task_index` looking for a task that has failed. Returns
+/// Scans tasks from `task_index` looking for a task that has failed. Returns
 /// its index if found, or `None` if it hits the end of the table.
 ///
 /// This operation is unable to detect that task 0 failed, which is deliberate:
