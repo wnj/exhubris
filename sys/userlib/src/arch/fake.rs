@@ -75,3 +75,7 @@ pub fn sys_set_timer(
 pub fn sys_get_timer() -> TimerSettings {
     unimplemented!()
 }
+
+pub fn sys_enable_irq(_: u32) {
+    unimplemented!()
+}

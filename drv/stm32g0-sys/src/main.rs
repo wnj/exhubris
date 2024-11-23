@@ -77,6 +77,39 @@ fn handle_message(rm: RecvMessage<'_>) -> Result<(), ReplyFaultReason> {
 
             Ok(())
         }
+        4 => {
+            // Set a port/pin to AFx
+            let Ok(msg) = <&[u8; 2]>::try_from(&*data) else {
+                return Err(ReplyFaultReason::BadMessageSize);
+            };
+            let msg = u16::from_le_bytes(*msg);
+            let pin = usize::from(msg & 0xF);
+            let gpio = get_port((msg >> 4) & 0xF)?;
+            let af = (msg >> 8) as u8;
+            gpio.afr(if pin < 8 { 0 } else { 1 }).modify(|r| r.set_afr(pin & 0b111, af));
+            gpio.moder().modify(|v| v.set_moder(pin, Moder::ALTERNATE));
+
+            Ok(())
+        }
+        5 => {
+            // Enable clock to a peripheral.
+            let Ok(msg) = <&[u8; 2]>::try_from(&*data) else {
+                return Err(ReplyFaultReason::BadMessageSize);
+            };
+            let msg = u16::from_le_bytes(*msg);
+            let bit_no = usize::from(msg & 0x1F);
+            let reg_no = msg >> 5;
+            let rcc = stm32_metapac::RCC;
+            match reg_no {
+                0 => rcc.gpioenr().modify(|r| r.0 |= 1 << bit_no),
+                1 => rcc.ahbenr().modify(|r| r.0 |= 1 << bit_no),
+                2 => rcc.apbenr1().modify(|r| r.0 |= 1 << bit_no),
+                3 => rcc.apbenr2().modify(|r| r.0 |= 1 << bit_no),
+                _ => return Err(ReplyFaultReason::BadMessageContents),
+            }
+
+            Ok(())
+        }
         _ => Err(ReplyFaultReason::UndefinedOperation),
     }
 }

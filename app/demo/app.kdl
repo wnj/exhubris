@@ -31,6 +31,16 @@ task "sys" {
     uses-peripheral "gpios"
 }
 
+task "echo" {
+    workspace-crate "uart-echo"
+    stack-size 128
+    priority 2
+    uses-task "sys"
+    uses-peripheral "usart2" {
+        irq "irq" "usart2-irq"
+    }
+}
+
 // IPC server. This must be at index 1 for ping to find it, currently.
 task "pong" {
     workspace-crate "pong"

@@ -22,6 +22,18 @@ memory {
     }
 }
 
+peripheral "usart1" {
+    base 0x4001_3800
+    size 0x400
+    irq "irq" 27
+}
+
+peripheral "usart2" {
+    base 0x4000_4400
+    size 0x400
+    irq "irq" 28  // note: conflicts with LPUART2
+}
+
 peripheral "rcc" {
     base 0x4002_1000
     size 0x400

@@ -661,6 +661,53 @@ sys_get_timer_stub:
     sysnum = const Sysnum::GetTimer as u32,
 );
 
+#[inline(always)]
+pub fn sys_enable_irq(bits: u32) {
+    unsafe {
+        sys_irq_control_stub(bits, 1)
+    }
+}
+
+global_asm!("
+.section .text.sys_irq_control_stub
+.globl sys_irq_control_stub
+.type sys_irq_control_stub,function
+sys_irq_control_stub:
+    .cfi_startproc
+
+    @ Stash the register values that we'll use to carry arguments.
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r4, -8
+    .cfi_offset r5, -4
+
+    mov r4, r11
+    push {{r4}}
+    .cfi_adjust_cfa_offset 4
+    .cfi_offset r11, -12
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments into place.
+    mov r4, r0
+    mov r5, r1
+
+    svc #0
+
+    @ Restore the registers.
+    pop {{r4}}
+    .cfi_adjust_cfa_offset -4
+    mov r11, r4
+    pop {{r4-r5}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::IrqControl as u32,
+);
 
 extern "C" {
     /// Low-level send syscall stub.
@@ -770,6 +817,8 @@ extern "C" {
     /// This is only considered "unsafe" by Rust because it's `extern "C"`.
     /// Calling this has no safety implications. Have fun.
     fn sys_get_timer_stub() -> AbiTimerSettings;
+
+    fn sys_irq_control_stub(bits: u32, status: u32);
 }
 
 cfg_if::cfg_if! {

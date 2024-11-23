@@ -1,0 +1,10 @@
+[package]
+name = "uart-echo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hubris-notifications = { version = "0.1.0", path = "../../sys/notifications" }
+hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
+stm32-metapac = { version = "15.0.0", features = ["stm32g031k8"] }
+userlib = { workspace = true, features = ["no-panic"] }

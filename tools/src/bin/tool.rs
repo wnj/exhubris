@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::{Range, RangeInclusive}, path::{Path, PathBuf}, process::Command, sync::Arc};
+use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::{Range, RangeInclusive}, path::{Path, PathBuf}, process::Command, sync::Arc};
 
 use clap::Parser;
 use comfy_table::CellAlignment;
@@ -252,6 +252,28 @@ fn main() -> miette::Result<()> {
                 shared_regions,
                 irqs: BTreeMap::new(),
             };
+            for (i, task) in app.tasks.values().enumerate() {
+                for (pname, puse) in &task.peripherals {
+                    let periphdef = &app.board.chip.peripherals[pname];
+                    let interrupts = &periphdef.value().interrupts;
+
+                    for (pirqname, notname) in &puse.value().interrupts {
+                        let irqnum = interrupts[pirqname];
+
+                        match kconfig.irqs.entry(irqnum) {
+                            btree_map::Entry::Vacant(v) => {
+                                v.insert(kconfig::InterruptConfig {
+                                    task_index: i,
+                                    notification: 1 << task.notifications.get_index_of(notname).unwrap(),
+                                });
+                            }
+                            btree_map::Entry::Occupied(_) => {
+                                panic!("internal inconsistency: interrupt {irqnum} defined in multiple places");
+                            }
+                        }
+                    }
+                }
+            }
 
             let mut used_shared_regions = BTreeSet::new();
 

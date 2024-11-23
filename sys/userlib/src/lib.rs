@@ -6,6 +6,7 @@ pub enum Sysnum {
     Recv = 1,
     Reply = 2,
     SetTimer = 3,
+    IrqControl = 7,
     Panic = 8,
     GetTimer = 9,
     ReplyFault = 12,
@@ -110,6 +111,9 @@ pub use self::arch::sys_set_timer;
 
 #[doc(inline)]
 pub use self::arch::sys_get_timer;
+
+#[doc(inline)]
+pub use self::arch::sys_enable_irq;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ResponseCode(u32);
