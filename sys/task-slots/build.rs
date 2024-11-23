@@ -17,6 +17,7 @@ fn main() {
         }
         writeln!(f, "}}").unwrap();
 
+        writeln!(f, "/// Tasks bound in the current task.").unwrap();
         writeln!(f, "pub const SLOTS: Slots = Slots {{").unwrap();
         for (name, index) in map {
             writeln!(f, "    {name}: userlib::TaskId::gen0({index}),").unwrap();
