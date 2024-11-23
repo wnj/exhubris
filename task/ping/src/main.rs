@@ -8,25 +8,12 @@
 #![no_main]
 
 use hubris_task_slots::SLOTS;
+use drv_stm32g0_sys_api::{Sys, Port};
 
 #[export_name = "main"]
 fn main() -> ! {
-    let mut sys = SLOTS.sys;
-    loop {
-        let r = userlib::sys_send(
-            sys,
-            0, // set pin to output
-            &(0b10_0110_u16).to_le_bytes(), // GPIO port C6
-            &mut [],
-            &mut [],
-        );
-        match r {
-            Ok((_, _)) => break,
-            Err(dead) => {
-                sys = sys.with_generation(dead.new_generation());
-            }
-        }
-    }
+    let sys = Sys::from(SLOTS.sys);
+    sys.set_pin_output(Port::C, 6);
 
     let mut pong = SLOTS.pong;
 
@@ -83,21 +70,7 @@ fn main() -> ! {
 
         if send_count == 100 {
             send_count = 0;
-            loop {
-                let r = userlib::sys_send(
-                    sys,
-                    3, // toggle a pin
-                    &(0b10_0110_u16).to_le_bytes(), // GPIO port C6
-                    &mut [],
-                    &mut [],
-                );
-                match r {
-                    Ok((_, _)) => break,
-                    Err(dead) => {
-                        sys = sys.with_generation(dead.new_generation());
-                    }
-                }
-            }
+            sys.toggle_pin(Port::C, 6);
         }
     }
 }

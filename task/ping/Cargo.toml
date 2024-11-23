@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+drv-stm32g0-sys-api = { version = "0.1.0", path = "../../drv/stm32g0-sys-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 userlib = {workspace = true, features = ["no-panic"]}

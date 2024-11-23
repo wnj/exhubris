@@ -1,0 +1,7 @@
+[package]
+name = "drv-stm32g0-sys-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+userlib.workspace = true

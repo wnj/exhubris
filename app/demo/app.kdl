@@ -33,7 +33,7 @@ task "sys" {
 
 task "echo" {
     workspace-crate "uart-echo"
-    stack-size 128
+    stack-size 160
     priority 2
     uses-task "sys"
     uses-peripheral "usart2" {
@@ -51,7 +51,7 @@ task "pong" {
 // IPC generator. This can be in any position.
 task "ping" {
     workspace-crate "ping"
-    stack-size 160
+    stack-size 192
     priority 3
     uses-task "pong"
     uses-task "sys"

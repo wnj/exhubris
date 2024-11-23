@@ -363,6 +363,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "drv-stm32g0-sys-api"
+version = "0.1.0"
+dependencies = [
+ "userlib",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -793,6 +800,7 @@ dependencies = [
 name = "ping"
 version = "0.1.0"
 dependencies = [
+ "drv-stm32g0-sys-api",
  "hubris-task-slots",
  "userlib",
 ]
@@ -1311,6 +1319,7 @@ dependencies = [
 name = "uart-echo"
 version = "0.1.0"
 dependencies = [
+ "drv-stm32g0-sys-api",
  "hubris-notifications",
  "hubris-task-slots",
  "stm32-metapac",
