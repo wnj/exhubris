@@ -41,14 +41,14 @@ task "echo" {
     }
 }
 
-// IPC server. This must be at index 1 for ping to find it, currently.
+// IPC server.
 task "pong" {
     workspace-crate "pong"
     stack-size 160
     priority 2
 }
 
-// IPC generator. This can be in any position.
+// IPC generator.
 task "ping" {
     workspace-crate "ping"
     stack-size 192
