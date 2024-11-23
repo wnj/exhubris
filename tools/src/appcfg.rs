@@ -1,7 +1,7 @@
 use std::{collections::{BTreeMap, BTreeSet}, fmt::Display, path::{Path, PathBuf}, sync::Arc};
 
 use cargo_metadata::Package;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, SourceSpan};
 
@@ -74,6 +74,12 @@ pub struct PeripheralDef {
     pub interrupts: BTreeMap<String, u32>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PeripheralUse {
+    /// Binding from peripheral interrupts to names used in this task.
+    pub interrupts: BTreeMap<String, String>,
+}
+
 /// Definition of a region of address space.
 #[derive(Clone, Debug)]
 pub struct RegionDef {
@@ -107,13 +113,17 @@ pub struct TaskDef {
     pub target: Option<Spanned<String>>,
 
     /// Peripherals used by this task.
-    pub peripherals: BTreeMap<String, SourceSpan>,
+    pub peripherals: BTreeMap<String, Spanned<PeripheralUse>>,
 
     /// Servers used by this task.
     ///
     /// TODO: this needs to grow additional attributes and allow a different
     /// name to be used internally vs externally.
     pub servers: BTreeMap<String, SourceSpan>,
+
+    /// Names for this task's notification bits, starting from bit 0 (the LSB).
+    /// These are collected from interrupts, followed by explicit declarations.
+    pub notifications: IndexSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -247,10 +257,10 @@ pub fn parse_app(
 
         // Check task references.
         for (name, task) in &tasks {
-            for (pname, span) in &task.peripherals {
+            for (pname, periph) in &task.peripherals {
                 if !board.chip.peripherals.contains_key(pname) {
                     bail!(
-                        labels=[LabeledSpan::at(*span, "unknown name")],
+                        labels=[LabeledSpan::at(periph.span(), "unknown name")],
                         "task {name} references unknown peripheral {pname}"
                     )
                 }
@@ -454,25 +464,28 @@ pub fn parse_task(
         let target = get_unique_optional_string_value(doc, "target")?;
 
         let peripherals = get_uniquely_named_children(doc, "uses-peripheral")?;
-        let mut unique_peripherals = BTreeMap::new();
-        let mut duplicate_peripherals = vec![];
-        for (name, pnode) in peripherals {
-            if unique_peripherals.insert(name.clone(), *pnode.span()).is_some() {
-                duplicate_peripherals.push((name, *pnode.span()));
-            }
-        }
-        if !duplicate_peripherals.is_empty() {
-            let labels = duplicate_peripherals.into_iter().map(|(_name, span)| LabeledSpan::at(span, "duplicate")).collect::<Vec<_>>();
-            bail!(
-                labels = labels,
-                "Peripheral names must not be repeated"
-            );
-        }
+        let peripherals = peripherals.into_iter()
+            .map(|(name, pnode)| {
+                let record = if let Some(body) = pnode.children() {
+                    parse_peripheral_use_body(body)?
+                } else {
+                    Spanned::new(PeripheralUse::default(), *pnode.span())
+                };
+                Ok((name, record))
+            })
+            .collect::<miette::Result<BTreeMap<_, _>>>()?;
 
         let servers = get_uniquely_named_children(doc, "uses-task")?;
         let servers = servers.into_iter()
             .map(|(name, node)| (name, *node.span()))
             .collect();
+
+        let mut notifications = IndexSet::new();
+        for peripheral in peripherals.values() {
+            for notname in peripheral.value().interrupts.values() {
+                notifications.insert(notname.to_string());
+            }
+        }
 
         Ok(TaskDef {
             name: name.to_string(),
@@ -483,8 +496,9 @@ pub fn parse_task(
             default_features,
             toolchain,
             target,
-            peripherals: unique_peripherals.into_iter().collect(),
+            peripherals,
             servers,
+            notifications,
         })
     })
 }
@@ -656,6 +670,30 @@ fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
     }
 
     Ok(Spanned::new(PeripheralDef { base, size, interrupts }, *node.span()))
+}
+
+fn parse_peripheral_use_body(doc: &KdlDocument) -> miette::Result<Spanned<PeripheralUse>> {
+    let interrupts = get_uniquely_named_children(doc, "irq")?;
+    let interrupts = interrupts.into_iter()
+        .map(|(peripheral_name, node)| {
+            if node.entries().len() == 2 {
+                let notification_name = node.entries()[1].value().as_string().ok_or_else(|| {
+                    miette!(
+                        labels = [LabeledSpan::at(*node.entries()[0].span(), "not a string")],
+                        "expected a string"
+                    )
+                })?;
+                Ok((peripheral_name, notification_name.to_string()))
+            } else {
+                bail!(
+                    labels = [LabeledSpan::at(*node.span(), "wrong number of arguments")],
+                    "uses-peripheral.irq should have exactly two arguments"
+                );
+            }
+        })
+        .collect::<miette::Result<BTreeMap<String, String>>>()?;
+
+    Ok(Spanned::new(PeripheralUse { interrupts }, *doc.span()))
 }
 
 
@@ -1105,10 +1143,12 @@ pub fn plan_build(
             .map(|name| (name.as_str(), app.tasks.get_index_of(name).unwrap()))
             .collect();
         let task_slots = ron::to_string(&task_slots).unwrap();
+        let task_notes = ron::to_string(&task.notifications).unwrap();
 
         let smuggled_env = [
             ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
             ("HUBRIS_TASK_SLOTS".to_string(), task_slots),
+            ("HUBRIS_NOTIFICATIONS".to_string(), task_notes),
         ].into_iter().collect();
 
         let plan = match task.package_source.value() {

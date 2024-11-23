@@ -1,0 +1,18 @@
+[package]
+name = "hubris-notifications"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+
+[dependencies]
+userlib.workspace = true
+
+[lib]
+test = false
+bench = false
+doctest = false
+
+[build-dependencies]
+convert_case = "0.6.0"
+ron = "0.8.1"

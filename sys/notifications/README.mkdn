@@ -1,0 +1,4 @@
+# `hubris-notifications`
+
+This crate exposes the build system's binding of the current task's notification
+bits as compile-time constants.
