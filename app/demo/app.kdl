@@ -43,6 +43,8 @@ task "ping" {
     workspace-crate "ping"
     stack-size 160
     priority 3
+    uses-task "pong"
+    uses-task "sys"
 }
 
 // Idle task. This must be the lowest priority task.

@@ -1,0 +1,4 @@
+# `hubris-task-slots`
+
+This crate exposes the current task's `uses-task` bindings as compile-time
+`TaskId` constants.

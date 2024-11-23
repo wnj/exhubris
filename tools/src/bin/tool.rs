@@ -626,7 +626,6 @@ fn do_cargo_build(
         .with_context(|| format!("copying {} to {}", product_path.display(), final_path.display()))?;
 
     Ok(())
-    
 }
 
 fn banner(content: impl core::fmt::Display) {

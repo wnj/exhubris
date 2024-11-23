@@ -443,6 +443,14 @@ name = "hubris-num-tasks"
 version = "0.1.0"
 
 [[package]]
+name = "hubris-task-slots"
+version = "0.1.0"
+dependencies = [
+ "ron",
+ "userlib",
+]
+
+[[package]]
 name = "idle"
 version = "0.1.0"
 dependencies = [
@@ -766,6 +774,7 @@ dependencies = [
 name = "ping"
 version = "0.1.0"
 dependencies = [
+ "hubris-task-slots",
  "userlib",
 ]
 

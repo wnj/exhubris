@@ -108,6 +108,12 @@ pub struct TaskDef {
 
     /// Peripherals used by this task.
     pub peripherals: BTreeMap<String, SourceSpan>,
+
+    /// Servers used by this task.
+    ///
+    /// TODO: this needs to grow additional attributes and allow a different
+    /// name to be used internally vs externally.
+    pub servers: BTreeMap<String, SourceSpan>,
 }
 
 #[derive(Clone, Debug)]
@@ -239,13 +245,21 @@ pub fn parse_app(
             })
             .collect::<miette::Result<IndexMap<_, _>>>()?;
 
-        // Check task peripheral references.
+        // Check task references.
         for (name, task) in &tasks {
             for (pname, span) in &task.peripherals {
                 if !board.chip.peripherals.contains_key(pname) {
                     bail!(
                         labels=[LabeledSpan::at(*span, "unknown name")],
                         "task {name} references unknown peripheral {pname}"
+                    )
+                }
+            }
+            for (tname, span) in &task.servers {
+                if !tasks.contains_key(tname) {
+                    bail!(
+                        labels=[LabeledSpan::at(*span, "unknown name")],
+                        "task {name} references unknown other task {tname}"
                     )
                 }
             }
@@ -455,6 +469,11 @@ pub fn parse_task(
             );
         }
 
+        let servers = get_uniquely_named_children(doc, "uses-task")?;
+        let servers = servers.into_iter()
+            .map(|(name, node)| (name, *node.span()))
+            .collect();
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
@@ -465,6 +484,7 @@ pub fn parse_task(
             toolchain,
             target,
             peripherals: unique_peripherals.into_iter().collect(),
+            servers,
         })
     })
 }
@@ -1081,8 +1101,14 @@ pub fn plan_build(
         let target_triple = task.target.as_ref()
             .unwrap_or(&app.board.chip.target_triple);
 
+        let task_slots: BTreeMap<&str, usize> = task.servers.keys()
+            .map(|name| (name.as_str(), app.tasks.get_index_of(name).unwrap()))
+            .collect();
+        let task_slots = ron::to_string(&task_slots).unwrap();
+
         let smuggled_env = [
             ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
+            ("HUBRIS_TASK_SLOTS".to_string(), task_slots),
         ].into_iter().collect();
 
         let plan = match task.package_source.value() {

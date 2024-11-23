@@ -7,12 +7,11 @@
 #![no_std]
 #![no_main]
 
-use userlib::TaskId;
+use hubris_task_slots::SLOTS;
 
 #[export_name = "main"]
 fn main() -> ! {
-    // TODO need task slots or equivalent
-    let mut sys = TaskId::gen0(1);
+    let mut sys = SLOTS.sys;
     loop {
         let r = userlib::sys_send(
             sys,
@@ -29,9 +28,7 @@ fn main() -> ! {
         }
     }
 
-    // TODO: we're assuming pong is at task index 2, which is not true in the
-    // general case.
-    let mut pong = TaskId::gen0(2);
+    let mut pong = SLOTS.pong;
 
     // Arbitrarily chosen operation code:
     let ping_op: u16 = 1;
