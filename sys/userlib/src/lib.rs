@@ -239,7 +239,8 @@ cfg_if::cfg_if! {
             // can involve calling arbitrary Display impls of arbitrary types,
             // which could panic. So we'll try our best not to introduce panics
             // _here_ and hope the caller doesn't write a panicking Display
-            // impl.
+            // impl. If they do, we stop the process with the message "recursive
+            // panic."
             //
             // It's also important that we not run out of stack. That is _also_
             // impossible to prevent in all cases, particularly if the panic
@@ -253,12 +254,27 @@ cfg_if::cfg_if! {
             // the stack.
 
             use core::fmt::Write;
+            use core::sync::atomic::{AtomicBool, Ordering};
+
+            static IN_PANIC: AtomicBool = AtomicBool::new(false);
+
+            // Check for recursive panic and stop the process if it happens. We
+            // are not using a swap here because we know we're in a
+            // single-threaded context, and swap would require a polyfill on
+            // some of our target platforms.
+            if IN_PANIC.load(Ordering::Relaxed) {
+                sys_panic(b"recursive panic");
+            }
+            IN_PANIC.store(true, Ordering::Relaxed);
 
             /// Number of UTF-8 bytes (not characters!) reserved for panic
             /// messages. Any panic message that exceeds this will be truncated,
             /// and thus might not be valid UTF-8. Larger values burn more
             /// static RAM.
-            const PANIC_MESSAGE_MAX: usize = 128;
+            ///
+            /// I suggest keeping this power-of-two-minus-1 so that it plus the
+            /// IN_PANIC flag are a convenient power of two.
+            const PANIC_MESSAGE_MAX: usize = 127;
             /// The actual reserved buffer.
             static mut PANIC_BUFFER: [u8; PANIC_MESSAGE_MAX] = [0; PANIC_MESSAGE_MAX];
 
