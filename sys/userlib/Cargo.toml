@@ -5,7 +5,17 @@ edition = "2021"
 
 [features]
 default = []
+
+# Any panic! in the final task binary will cause a linker failure. This can be
+# used to ensure that all panics are proven unreachable by the compiler. This
+# causes the panic message control features to become irrelevant, since panic
+# messages can no longer occur.
 no-panic = []
+
+# The message, file, line, and column of any panic! in the task will be ignored,
+# and replaced with the string "PANIC". This ensures that integer formatting and
+# Display/Debug impls are not compiled into the task (unless used elsewhere)
+# which saves a lot of space.
 no-panic-messages = []
 
 [dependencies]

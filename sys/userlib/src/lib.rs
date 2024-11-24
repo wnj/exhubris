@@ -347,8 +347,17 @@ cfg_if::cfg_if! {
             let buf = unsafe { &mut *core::ptr::addr_of_mut!(PANIC_BUFFER) };
 
             // Render the panic message!
+            //
+            // Note that we do _not_ use PanicInfo's Display impl, because it's
+            // wasteful (it burns 14 bytes just saying we panicked, which, um,
+            // WE KNOW). We still print the location first to prioritize it if
+            // truncation happens. Keep your panic messages short!
             let mut writer = LimitedWriter { buf, pos: 0 };
-            write!(writer, "{}", info).ok();
+            if let Some(location) = info.location() {
+                write!(writer, "{}:{}:{}: ", location.file(), location.line(), location.column()).ok();
+            }
+            write!(writer, "{}", info.message()).ok();
+
 
             // Pass the rendered portion of our buffer to the kernel.
             //
@@ -358,7 +367,6 @@ cfg_if::cfg_if! {
             // can often prove can't happen, but that's not guaranteed.
             sys_panic(unsafe { writer.buf.get_unchecked(..writer.pos) })
         }
-
     }
 }
 
