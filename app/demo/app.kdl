@@ -35,9 +35,18 @@ task "echo" {
     workspace-crate "uart-echo"
     stack-size 160
     priority 2
+    features "chip-stm32g031k8"
     uses-task "sys"
     uses-peripheral "usart2" {
-        irq "irq" "usart2-irq"
+        irq "irq" "usart-irq"
+    }
+    config {
+        uart-clock-hz 16_000_000
+        baud-rate 9_600
+        pins {
+            - name="A2" af=1
+            - name="A3" af=1
+        }
     }
 }
 

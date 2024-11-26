@@ -5,7 +5,7 @@ use indexmap::{IndexMap, IndexSet};
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, SourceSpan};
 
-use crate::BuildEnv;
+use crate::{config, BuildEnv};
 
 #[derive(Clone, Debug)]
 pub struct AppDef {
@@ -114,6 +114,9 @@ pub struct TaskDef {
 
     /// Peripherals used by this task.
     pub peripherals: BTreeMap<String, Spanned<PeripheralUse>>,
+
+    /// Parsed configuration data, if provided.
+    pub config: Option<serde_json::Value>,
 
     /// Servers used by this task.
     ///
@@ -519,6 +522,9 @@ pub fn parse_task(
             }
         }
 
+        let config = get_unique_optional_child(doc, "config")?
+            .map(config::parse_node_contents).transpose()?;
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
@@ -530,6 +536,7 @@ pub fn parse_task(
             target,
             peripherals,
             servers,
+            config,
             notifications,
         })
     })
@@ -1177,11 +1184,16 @@ pub fn plan_build(
         let task_slots = ron::to_string(&task_slots).unwrap();
         let task_notes = ron::to_string(&task.notifications).unwrap();
 
-        let smuggled_env = [
+        let mut smuggled_env: BTreeMap<_, _> = [
             ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
             ("HUBRIS_TASK_SLOTS".to_string(), task_slots),
             ("HUBRIS_NOTIFICATIONS".to_string(), task_notes),
         ].into_iter().collect();
+
+        if let Some(config) = &task.config {
+            let ronconfig = serde_json::to_string(config).into_diagnostic()?;
+            smuggled_env.insert("HUBRIS_TASK_CONFIG".to_string(), ronconfig);
+        }
 
         let plan = match task.package_source.value() {
             PackageSource::WorkspaceCrate { name } => {
