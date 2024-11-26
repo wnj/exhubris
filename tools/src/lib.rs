@@ -1,5 +1,6 @@
 pub mod appcfg;
 pub mod alloc;
+pub mod config;
 
 use std::{path::PathBuf, process::Command};
 
