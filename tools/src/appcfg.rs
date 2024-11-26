@@ -1356,6 +1356,7 @@ mod tests {
         parse_app_str("<input>", appcfg, &SelfContained).unwrap();
     }
 
+    #[track_caller]
     fn assert_error_is_decent(e: miette::Report, substring: &str) {
         println!("{e:?}");
         assert!(e.source_code().is_some(), "error is missing source code!");
@@ -1374,14 +1375,14 @@ mod tests {
             ";
         match parse_app_str("<input>", appcfg, &SelfContained) {
             Ok(_) => panic!("should not have parsed"),
-            Err(e) => assert_error_is_decent(e, "'name' is missing"),
+            Err(e) => assert_error_is_decent(e, "first node is not 'app'"),
         }
     }
 
     #[test]
     fn app_missing_board() {
         let appcfg = r#"
-            name "charles"
+            app "charles"
             "#;
         match parse_app_str("<input>", appcfg, &SelfContained) {
             Ok(_) => panic!("should not have parsed"),
@@ -1392,15 +1393,18 @@ mod tests {
     #[test]
     fn app_simple_successful() {
         let appcfg = r#"
-            name "charles"
-            board {
-                name "film (canada)"
-                chip {
-                    name "potato"
+            app "charles"
+            board "film (canada)" {
+                chip "potato" {
                     target-triple "i4004-none-gnueabi"
                     memory {
                     }
+                    vector-table-size 42
                 }
+            }
+            kernel {
+                workspace-crate "omglol"
+                stack-size 1234
             }
             "#;
         let cfg = parse_app_str("<input>", appcfg, &SelfContained).expect("should have parsed");
@@ -1415,17 +1419,21 @@ mod tests {
     fn app_board_include() {
         let mut ctx = FakeContext::default();
         ctx.add_board("film-board-of-canada", "fake-board.kdl", r#"
-            name "film (canada)"
-            chip {
-                name "potato"
+            board "film (canada)"
+            chip "potato" {
                 target-triple "i4004-none-gnueabi"
                 memory {
                 }
+                vector-table-size 42
             }
             "#);
         let appcfg = r#"
-            name "charles"
+            app "charles"
             board "film-board-of-canada"
+            kernel {
+                workspace-crate "omglol"
+                stack-size 1234
+            }
             "#;
         let cfg = parse_app_str("<input>", appcfg, &ctx).expect("should have parsed");
         assert_eq!(cfg.name.value(), "charles");
