@@ -219,23 +219,26 @@ pub fn parse_app_str(
     })
 }
 
-pub fn parse_board_str(
-    path: &str,
-    src: &str,
-    ctx: &dyn LoadContext,
-) -> miette::Result<BoardDef> {
-    parse_source_str(path, src, |source, doc| {
-        parse_board(source, &doc, ctx)
-    })
-}
-
 pub fn parse_app(
     source: Arc<NamedSource>,
     doc: &KdlDocument,
     ctx: &dyn LoadContext,
 ) -> miette::Result<AppDef> {
     add_source(&source, || {
-        let name = get_unique_string_value(doc, "name")?;
+        let first = doc.nodes().first().ok_or_else(|| {
+            miette!("alleged appconfig doesn't contain any nodes")
+        })?;
+        if first.name().value() != "app" {
+            bail!(
+                labels=[LabeledSpan::at(*first.name().span(), "expected 'app' here")],
+                "this may not be an appconfig, first node is not 'app'"
+            );
+        }
+
+        // This'll do the search for the "app" node again in an
+        // order-insensitive way, which is technically wasted work, but it keeps
+        // us from having to reproduce the value extraction and validation code!
+        let name = get_unique_string_value(doc, "app")?;
 
         let board = get_unique_child_or_include(
             &source,
@@ -243,7 +246,7 @@ pub fn parse_app(
             "board",
             Namespace::Board,
             ctx,
-            |s, d| parse_board(s, &d, ctx),
+            |s, name, d| parse_board(s, name, d, ctx),
         )?;
 
         let tasks = get_uniquely_named_children(doc, "task")?
@@ -298,16 +301,46 @@ pub fn get_unique_child_or_include<T>(
     name: &str,
     ns: Namespace,
     ctx: &dyn LoadContext,
-    proc: impl FnOnce(Arc<NamedSource>, KdlDocument) -> miette::Result<T>,
+    proc: impl FnOnce(Arc<NamedSource>, Spanned<String>, &KdlDocument) -> miette::Result<T>,
 ) -> miette::Result<T> {
     let child = get_unique_child(doc, name)?;
     if child.children().is_some() {
-        no_arguments(child)?;
-        proc(source.clone(), required_children(child)?.clone())
+        if child.entries().len() != 1 {
+            bail!(
+                labels=[LabeledSpan::at(*child.span(), "missing here")],
+                "expected a name (string) argument"
+            );
+        }
+        let name_entry = &child.entries()[0];
+        if name_entry.name().is_some() {
+            bail!(
+                labels=[LabeledSpan::at(*name_entry.span(), "has a property name")],
+                "expected an argument, not a property"
+            );
+        }
+        let name_str = name_entry.value().as_string().ok_or_else(|| {
+            miette!(
+                labels = [LabeledSpan::at(*name_entry.span(), "not a string")],
+                "expected a string name"
+            )
+        })?;
+        let name_str = Spanned::new(name_str.to_string(), *name_entry.span());
+
+        proc(source.clone(), name_str, required_children(child)?)
     } else {
         let ident = get_unique_string_value(doc, name)?;
         let (docsrc, doc) = ctx.get_resource(ns, ident.value())?;
-        proc(docsrc, doc)
+        let first = doc.nodes().first().ok_or_else(|| {
+            miette!("alleged appconfig doesn't contain any nodes")
+        })?;
+        if first.name().value() != name {
+            bail!(
+                labels=[LabeledSpan::at(*first.name().span(), "expected here")],
+                "this may not be the right kind of config, first node is not '{name}'"
+            );
+        }
+        let name = get_unique_string_value(&doc, name)?;
+        proc(docsrc, name, &doc)
             .wrap_err_with(|| {
                 miette!(
                     labels = [LabeledSpan::at(ident.span(), ident.value())],
@@ -320,19 +353,18 @@ pub fn get_unique_child_or_include<T>(
 
 pub fn parse_board(
     source: Arc<NamedSource>,
+    name: Spanned<String>,
     doc: &KdlDocument,
     ctx: &dyn LoadContext,
 ) -> miette::Result<BoardDef> {
     add_source(&source, || {
-        let name = get_unique_string_value(doc, "name")?;
-
         let chip = get_unique_child_or_include(
             &source,
             doc,
             "chip",
             Namespace::Chip,
             ctx,
-            |s, d| parse_chip(s, &d),
+            parse_chip,
         ).wrap_err_with(|| "can't process chip for board")?;
 
         Ok(BoardDef {
@@ -345,10 +377,10 @@ pub fn parse_board(
 
 pub fn parse_chip(
     source: Arc<NamedSource>,
+    name: Spanned<String>,
     doc: &KdlDocument,
 ) -> miette::Result<ChipDef> {
     add_source(&source, || {
-        let name = get_unique_string_value(doc, "name")?;
         let target_triple = get_unique_string_value(doc, "target-triple")?;
         let vector_table_size = get_unique_i64_value(doc, "vector-table-size")?;
         let vector_table_size = vector_table_size.try_map_with_span(|i, span| {
@@ -740,7 +772,7 @@ fn get_unique_i64_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned
         })
 }
 
-fn get_unique_string_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<Spanned<String>> {
+fn get_unique_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<String>> {
     get_unique_value(doc, name)?
         .try_map_with_span(|v, span| {
             v.as_string().ok_or_else(|| {
@@ -893,7 +925,7 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
     Ok(strings)
 }
 
-fn get_unique_bool<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<bool> {
+fn get_unique_bool(doc: &KdlDocument, name: &str) -> miette::Result<bool> {
     let mut found = vec![];
     for node in doc.nodes() {
         if node.name().value() == name {
@@ -915,7 +947,7 @@ fn get_unique_bool<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<bool>
             "expected {name} to appear at most once",
         ).into())
     } else {
-        no_arguments(&found[0])?;
+        no_arguments(found[0])?;
         Ok(true)
     }
 }
@@ -1287,6 +1319,7 @@ mod tests {
             let doc = text.parse().expect("fixture failed to parse");
             self.boards.insert(ident.to_string(), (nsrc, doc));
         }
+        #[allow(dead_code)] // TODO
         fn add_chip(&mut self, ident: &str, path: &str, text: &str) {
             let nsrc = Arc::new(NamedSource::new(path, text.to_string()));
             let doc = text.parse().expect("fixture failed to parse");
@@ -1402,23 +1435,4 @@ mod tests {
         assert!(cfg.board.chip.memory.is_empty());
     }
 
-    #[test]
-    fn board_chip_include() {
-        let mut ctx = FakeContext::default();
-        ctx.add_chip("potato", "lol-im-a-potato.kdl", r#"
-            name "potato"
-            target-triple "i4004-none-gnueabi"
-            memory {
-            }
-            "#);
-        let boardcfg = r#"
-            name "film (canada)"
-            chip "potato"
-            "#;
-        let cfg = parse_board_str("<input>", boardcfg, &ctx).expect("should have parsed");
-        assert_eq!(cfg.name.value(), "film (canada)");
-        assert_eq!(cfg.chip.name.value(), "potato");
-        assert_eq!(cfg.chip.target_triple.value(), "i4004-none-gnueabi");
-        assert!(cfg.chip.memory.is_empty());
-    }
 }
