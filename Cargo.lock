@@ -1324,7 +1324,6 @@ dependencies = [
  "drv-stm32g0-sys-api",
  "hubris-notifications",
  "hubris-task-slots",
- "serde",
  "serde_json",
  "stm32-metapac",
  "userlib",
