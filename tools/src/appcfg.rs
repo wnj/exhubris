@@ -486,7 +486,9 @@ pub fn parse_task(
             }
         }
         if !duplicate_features.is_empty() {
-            let labels = duplicate_features.into_iter().map(|f| LabeledSpan::at(f.span(), "duplicate")).collect::<Vec<_>>();
+            let labels = duplicate_features.into_iter()
+                .map(|f| LabeledSpan::at(f.span(), "duplicate"))
+                .collect::<Vec<_>>();
             bail!(
                 labels = labels,
                 "Cargo features must not be repeated"
