@@ -746,7 +746,7 @@ pub fn add_source<T>(source: &Arc<NamedSource>, body: impl FnOnce() -> miette::R
     })
 }
 
-fn no_arguments(node: &KdlNode) -> miette::Result<()> {
+pub(crate) fn no_arguments(node: &KdlNode) -> miette::Result<()> {
     if node.entries().is_empty() {
         Ok(())
     } else {
@@ -757,7 +757,18 @@ fn no_arguments(node: &KdlNode) -> miette::Result<()> {
     }
 }
 
-fn required_children(node: &KdlNode) -> miette::Result<&KdlDocument> {
+pub(crate) fn no_children(node: &KdlNode) -> miette::Result<()> {
+    if node.children().is_none() {
+        Ok(())
+    } else {
+        Err(miette!(
+            labels = [LabeledSpan::at(*node.span(), "has children")],
+            "node must not have children"
+        ))
+    }
+}
+
+pub(crate) fn required_children(node: &KdlNode) -> miette::Result<&KdlDocument> {
     node.children().ok_or_else(|| {
         miette!(
             labels = [LabeledSpan::at(*node.span(), "missing body")],
@@ -767,7 +778,7 @@ fn required_children(node: &KdlNode) -> miette::Result<&KdlDocument> {
     })
 }
 
-fn get_unique_i64_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<i64>> {
+pub(crate) fn get_unique_i64_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<i64>> {
     get_unique_value(doc, name)?
         .try_map_with_span(|v, span| {
             v.as_i64().ok_or_else(|| {
@@ -779,7 +790,7 @@ fn get_unique_i64_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned
         })
 }
 
-fn get_unique_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<String>> {
+pub(crate) fn get_unique_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<String>> {
     get_unique_value(doc, name)?
         .try_map_with_span(|v, span| {
             v.as_string().ok_or_else(|| {
@@ -790,21 +801,6 @@ fn get_unique_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Span
             }).map(|s| s.to_string())
         })
 }
-
-/*
-fn get_unique_optional_string_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<Option<(&'d str, SourceSpan)>> {
-    let Some((v, span)) = get_unique_optional_value(doc, name)? else {
-        return Ok(None)
-    };
-    let s = v.as_string().ok_or_else(|| {
-        miette!(
-            labels = [LabeledSpan::at(span, "not a string")],
-            "value for {name} must be a string"
-        )
-    })?;
-    Ok(Some((s, span)))
-}
-*/
 
 fn get_unique_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<Spanned<&'d KdlValue>> {
     get_unique_optional_value(doc, name)?
@@ -847,7 +843,7 @@ fn get_unique_optional_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Re
     }
 }
 
-fn get_unique_optional_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Option<Spanned<String>>> {
+pub(crate) fn get_unique_optional_string_value(doc: &KdlDocument, name: &str) -> miette::Result<Option<Spanned<String>>> {
     let Some(value) = get_unique_optional_value(doc, name)? else {
         return Ok(None);
     };
@@ -932,7 +928,7 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
     Ok(strings)
 }
 
-fn get_unique_bool(doc: &KdlDocument, name: &str) -> miette::Result<bool> {
+pub(crate) fn get_unique_bool(doc: &KdlDocument, name: &str) -> miette::Result<bool> {
     let mut found = vec![];
     for node in doc.nodes() {
         if node.name().value() == name {
@@ -995,7 +991,7 @@ fn get_unique_child<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<&'d 
         })
 }
 
-fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<IndexMap<String, &'d KdlNode>> {
+pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<IndexMap<String, &'d KdlNode>> {
     let mut found = vec![];
     for node in doc.nodes() {
         if node.name().value() == name {

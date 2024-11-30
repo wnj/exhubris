@@ -1,5 +1,6 @@
 pub mod appcfg;
 pub mod alloc;
+pub mod idl;
 pub mod config;
 
 use std::{path::PathBuf, process::Command};
@@ -146,6 +147,12 @@ impl TargetSpec {
 pub fn get_target_spec(triple: &str) -> Option<TargetSpec> {
     match triple {
         "thumbv6m-none-eabi" => Some(TargetSpec {
+            size_rule: SizeRule::PowerOfTwo,
+            alloc_minimum: 32,
+            stack_align: 8,
+            bfd_name: "armelf".to_string(),
+        }),
+        "thumbv7em-none-eabihf" => Some(TargetSpec {
             size_rule: SizeRule::PowerOfTwo,
             alloc_minimum: 32,
             stack_align: 8,

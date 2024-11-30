@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hubpack = "0.1.2"
+serde = { version = "1.0.215", default-features = false, features = ["derive"] }
 userlib.workspace = true
+
+[build-dependencies]
+tools = { version = "0.1.0", path = "../../tools" }

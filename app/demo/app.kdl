@@ -24,7 +24,7 @@ task "super" {
 
 task "sys" {
     workspace-crate "drv-stm32g0-sys"
-    stack-size 160
+    stack-size 256
     priority 1
     features "chip-stm32g031k8"
     uses-peripheral "rcc"
@@ -33,7 +33,7 @@ task "sys" {
 
 task "echo" {
     workspace-crate "uart-echo"
-    stack-size 160
+    stack-size 256
     priority 2
     features "chip-stm32g031k8"
     uses-task "sys"
@@ -60,7 +60,7 @@ task "pong" {
 // IPC generator.
 task "ping" {
     workspace-crate "ping"
-    stack-size 192
+    stack-size 256
     priority 3
     uses-task "pong"
     uses-task "sys"

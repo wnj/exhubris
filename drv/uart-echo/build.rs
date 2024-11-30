@@ -16,15 +16,15 @@ fn main() {
     let mut f = std::fs::File::create(&out).unwrap();
 
     writeln!(f, "pub(crate) mod config {{").unwrap();
-    writeln!(f, "use drv_stm32g0_sys_api::Port;").unwrap();
+    writeln!(f, "use drv_stm32g0_sys_api::{{Port, Function}};").unwrap();
 
     writeln!(f, "pub const UART_CLOCK_HZ: u32 = {};", config["uart-clock-hz"]).unwrap();
     writeln!(f, "pub const BAUD_RATE: u32 = {};", config["baud-rate"]).unwrap();
 
-    writeln!(f, "pub const PINS: [(Port, u8, u8); 2] = [").unwrap();
+    writeln!(f, "pub const PINS: [(Port, u8, Function); 2] = [").unwrap();
     for pinaf in config["pins"].as_array().unwrap() {
         let (port, pin) = parse_pin_name(pinaf["name"].as_str().unwrap());
-        writeln!(f, "    (Port::{port}, {pin}, {}),", pinaf["af"].as_u64().unwrap()).unwrap();
+        writeln!(f, "    (Port::{port}, {pin}, Function::AF{}),", pinaf["af"].as_u64().unwrap()).unwrap();
     }
     writeln!(f, "];").unwrap();
     writeln!(f, "}}").unwrap();

@@ -8,7 +8,7 @@
 #![no_main]
 
 use hubris_task_slots::SLOTS;
-use drv_stm32g0_sys_api::{Sys, Port};
+use drv_stm32g0_sys_api::{Stm32G0Sys as Sys, Port};
 
 #[export_name = "main"]
 fn main() -> ! {

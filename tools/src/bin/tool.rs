@@ -41,6 +41,9 @@ enum Cmd {
         #[clap(short, long)]
         gdbconfig: Option<PathBuf>,
     },
+    CheckIdl {
+        path: PathBuf,
+    }
 }
 
 fn main() -> miette::Result<()> {
@@ -477,6 +480,28 @@ fn main() -> miette::Result<()> {
                 }
             }
 
+            Ok(())
+        }
+        Cmd::CheckIdl { path } => {
+            let interface = tools::idl::load_interface(path)?;
+            println!();
+            println!("Got:");
+            println!("{interface:#?}");
+
+            let client = tools::idl::codegen::generate_client(&interface)?;
+            let client = tools::idl::codegen::format_code(&client);
+            println!();
+            println!("Client:");
+            println!("{client}");
+            for (name, t) in &interface.types {
+                match t {
+                    tools::idl::TypeDef::Enum(e) => {
+                        let s = tools::idl::codegen::generate_enum(name, e)?;
+                        println!("{}", tools::idl::codegen::format_code(&s));
+                    }
+                    tools::idl::TypeDef::Struct(_) => (),
+                }
+            }
             Ok(())
         }
     }
