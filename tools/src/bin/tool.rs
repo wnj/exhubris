@@ -752,6 +752,16 @@ fn relink(
         writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
     }
     writeln!(scr, "}}").into_diagnostic()?;
+    writeln!(scr, "SECTIONS {{").into_diagnostic()?;
+    for (section, memory) in &app.tasks[taskname].sections {
+        let leader = if section.starts_with('.') { "" } else { "." };
+        let memory = memory.to_ascii_uppercase();
+        writeln!(scr, "{leader}{section} (NOLOAD) : ALIGN(4) {{").into_diagnostic()?;
+        writeln!(scr, "  *({leader}{section} {leader}{section}.*);").into_diagnostic()?;
+        writeln!(scr, "}} > {memory}").into_diagnostic()?;
+    }
+    writeln!(scr, "  ").into_diagnostic()?;
+    writeln!(scr, "}} INSERT AFTER .uninit").into_diagnostic()?;
     drop(scr);
 
     let mut ldcmd = Command::new(&env.linker_path);

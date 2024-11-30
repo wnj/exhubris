@@ -127,6 +127,9 @@ pub struct TaskDef {
     /// Names for this task's notification bits, starting from bit 0 (the LSB).
     /// These are collected from interrupts, followed by explicit declarations.
     pub notifications: IndexSet<String>,
+
+    /// Additional mapping from custom linker sections to target memory regions.
+    pub sections: IndexMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -527,6 +530,28 @@ pub fn parse_task(
         let config = get_unique_optional_child(doc, "config")?
             .map(config::parse_node_contents).transpose()?;
 
+        let sections = get_uniquely_named_children(doc, "assign-section")?
+            .into_iter()
+            .map(|(name, node)| {
+                no_children(node)?;
+                let e = node.entries();
+                if e.len() != 2 {
+                    bail!(
+                        labels=[LabeledSpan::at(*node.span(), "expected two args")],
+                        "wrong number of arguments"
+                    )
+                }
+                let dest = &e[1];
+                let Some(dest) = dest.value().as_string() else {
+                    bail!(
+                        labels=[LabeledSpan::at(*dest.span(), "not a string")],
+                        "target memory region should be a string"
+                    )
+                };
+                Ok((name, dest.to_string()))
+            })
+            .collect::<miette::Result<IndexMap<_, _>>>()?;
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
@@ -540,6 +565,7 @@ pub fn parse_task(
             servers,
             config,
             notifications,
+            sections,
         })
     })
 }
