@@ -1,0 +1,45 @@
+chip "STM32L412KB"
+target-triple "thumbv7em-none-eabihf"
+
+// L412 lacks I2C4 and thus has a slightly smaller vector table than some other
+// entries in the series.
+vector-table-size 0x18C
+
+memory {
+    region "vectors" {
+        base 0x0800_0000
+        size 0x1E4 // enlarged to accommodate header
+        read
+    }
+    region "flash" {
+        base 0x0800_01E4
+        size 0x1FE1C  // 128 kiB - 0x1E4
+        read
+        execute
+    }
+    region "ram" {
+        base 0x2000_0000
+        size 40_960
+        read
+        write
+    }
+    region "usbram" {
+        base 0x4000_6C00
+        size 1024
+        read
+        write
+    }
+}
+
+peripheral "rcc" {
+    base 0x4002_1000
+    size 0x400
+}
+
+// This includes ports A-H. Note that ports E/F/G are not implemented on the
+// STM32L4, but are included in this region anyway. This has proven to be fine
+// in practice; we won't try to access them, and if we did it'd likely trap.
+peripheral "gpios" {
+    base 0x4800_0000
+    size 0x2000
+}

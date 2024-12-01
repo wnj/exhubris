@@ -377,6 +377,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "drv-stm32l4-sys"
+version = "0.1.0"
+dependencies = [
+ "hubpack",
+ "idyll_runtime",
+ "serde",
+ "stm32-metapac",
+ "tools",
+ "userlib",
+]
+
+[[package]]
 name = "drv-stm32l4-sys-api"
 version = "0.1.0"
 dependencies = [
@@ -646,6 +658,16 @@ dependencies = [
  "cortex-m-rt",
  "kern",
  "stm32g0",
+]
+
+[[package]]
+name = "kernel-generic-stm32l412"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "kern",
+ "stm32l4",
 ]
 
 [[package]]
@@ -1177,6 +1199,18 @@ name = "stm32g0"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce2fda706a5ca8a4c4c7c965668ff908c10dfeb1c2da581b6a2007ee60ae4787"
+dependencies = [
+ "bare-metal 1.0.0",
+ "cortex-m",
+ "cortex-m-rt",
+ "vcell",
+]
+
+[[package]]
+name = "stm32l4"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e96b3a8049dc4dc38e107d0750beb07a2420febde87708bb9180ad59e90faa87"
 dependencies = [
  "bare-metal 1.0.0",
  "cortex-m",

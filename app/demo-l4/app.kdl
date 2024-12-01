@@ -1,0 +1,55 @@
+// Demo Application Definition
+
+// App name is used for output files etc. It must be the first non-blank
+// non-comment line in the file.
+app "demo-l4"
+
+// Currently the board information is inlined. It would be nice to refer to an
+// external file, like we already do for chip definitions.
+board "fourk" {
+    chip "stm32l412kb"
+}
+
+// Instructions for building the kernel.
+kernel {
+    workspace-crate "kernel-generic-stm32l412"
+    stack-size 1024
+}
+
+task "super" {
+    workspace-crate "minisuper"
+    stack-size 256
+    priority 0
+}
+
+task "sys" {
+    workspace-crate "drv-stm32l4-sys"
+    stack-size 256
+    priority 1
+    features "chip-stm32l412kb"
+    uses-peripheral "rcc"
+    uses-peripheral "gpios"
+}
+
+// IPC server.
+/-task "pong" {
+    workspace-crate "pong"
+    stack-size 160
+    priority 2
+}
+
+// IPC generator.
+/-task "ping" {
+    workspace-crate "ping"
+    stack-size 192
+    priority 3
+    uses-task "pong"
+    uses-task "sys"
+}
+
+// Idle task. This must be the lowest priority task.
+task "idle" {
+    workspace-crate "idle"
+    stack-size 128
+    priority 4
+}

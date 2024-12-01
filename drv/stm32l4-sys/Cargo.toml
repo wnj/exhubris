@@ -1,0 +1,22 @@
+[package]
+name = "drv-stm32l4-sys"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+chip-stm32l412kb = ["stm32-metapac/stm32l412kb"]
+
+[dependencies]
+hubpack = "0.1.2"
+idyll_runtime = { version = "0.1.0", path = "../../sys/idyll_runtime" }
+serde = { version = "1.0.215", default-features = false, features = ["derive"] }
+stm32-metapac = "15.0.0"
+userlib = {workspace = true, features = ["no-panic"]}
+
+[[bin]]
+name = "drv-stm32l4-sys"
+test = false
+bench = false
+
+[build-dependencies]
+tools = { version = "0.1.0", path = "../../tools" }
