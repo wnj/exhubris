@@ -2,7 +2,7 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
-use userlib::RecvMessage;
+use userlib::{RecvMessage, TaskId};
 pub use userlib::ReplyFaultReason;
 
 #[derive(Copy, Clone, Debug)]
@@ -31,6 +31,26 @@ pub fn dispatch<S, O>(server: &mut S, buffer: &mut [MaybeUninit<u8>])
     if let Err(e) = dispatch_inner(server, &rm) {
         userlib::sys_reply_fault(rm.sender, e);
     }
+}
+
+pub fn dispatch_or_event<S, O>(server: &mut S, mask: u32, buffer: &mut [MaybeUninit<u8>])
+    where for<'a> (PhantomData<O>, &'a mut S): Server<O>,
+          O: TryFrom<u16>,
+          S: NotificationHandler,
+{
+    let rm = userlib::sys_recv_open(buffer, mask);
+    if rm.sender == TaskId::KERNEL {
+        server.handle_notification(rm.operation_or_notification);
+    } else {
+        let r = dispatch_inner(server, &rm);
+        if let Err(e) = r {
+            userlib::sys_reply_fault(rm.sender, e);
+        }
+    }
+}
+
+pub trait NotificationHandler {
+    fn handle_notification(&mut self, bits: u32);
 }
 
 fn dispatch_inner<S, O>(server: &mut S, rm: &RecvMessage<'_>) -> Result<(), ReplyFaultReason>
