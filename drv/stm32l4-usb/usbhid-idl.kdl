@@ -1,0 +1,18 @@
+// USBHID driver interface.
+
+interface "usb-hid"
+
+// Operations:
+
+method "enqueue_report" {
+    doc "Makes a report ready to transmit when requested by the host."
+
+    operation 0
+    arg "endpoint" "u8"
+    lease "report" "[u8]" {
+        read
+    }
+
+    // true if enqueued, false if the previous report is still pending.
+    result "bool"
+}

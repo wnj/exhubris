@@ -32,6 +32,18 @@ task "sys" {
     uses-peripheral "gpios"
 }
 
+task "usbhid" {
+    workspace-crate "drv-stm32l4-usb"
+    stack-size 512
+    priority 2
+    features "chip-stm32l412kb"
+    uses-task "sys"
+    uses-peripheral "crs"
+    uses-peripheral "usbfs_and_sram" {
+        irq "irq" "usb-irq"
+    }
+}
+
 task "l4blinky" {
     workspace-crate "l4blinky"
     stack-size 256
