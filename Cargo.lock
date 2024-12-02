@@ -664,6 +664,7 @@ dependencies = [
 name = "kernel-generic-stm32l412"
 version = "0.1.0"
 dependencies = [
+ "cfg-if",
  "cortex-m",
  "cortex-m-rt",
  "kern",

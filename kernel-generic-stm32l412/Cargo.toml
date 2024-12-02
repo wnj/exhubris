@@ -3,7 +3,14 @@ name = "kernel-generic-stm32l412"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+clock-80mhz-hsi16 = []
+clock-hsi48-on = []
+
+pwr-vddusb-valid = []
+
 [dependencies]
+cfg-if = "1.0.0"
 cortex-m = { version = "0.7.7", features = ["inline-asm"] }
 cortex-m-rt = "0.7.5"
 #hubris-kern = {package = "kern", git = "https://github.com/oxidecomputer/hubris.git", features = ["nano"]}

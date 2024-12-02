@@ -13,6 +13,7 @@ board "fourk" {
 // Instructions for building the kernel.
 kernel {
     workspace-crate "kernel-generic-stm32l412"
+    features "clock-80mhz-hsi16" "clock-hsi48-on" "pwr-vddusb-valid"
     stack-size 1024
 }
 
