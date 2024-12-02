@@ -362,14 +362,14 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
         let rty = generate_type(rty.value())?;
         quote! {
             let mut retbuf = [0u8; <#rty as hubpack::SerializedSize>::MAX_SIZE];
-            let retlen = hubpack::serialize(&r, &mut retbuf).unwrap_or(0);
+            let retlen = hubpack::serialize(&mut retbuf, &r).unwrap_or(0);
             let reply = unsafe { retbuf.get_unchecked(..retlen) };
-            sys_reply(msg.sender, userlib::ResponseCode::SUCCESS, reply);
+            userlib::sys_reply(msg.sender, userlib::ResponseCode::SUCCESS, reply);
         }
     } else {
         quote! {
             let () = r;
-            sys_reply(msg.sender, userlib::ResponseCode::SUCCESS, &[]);
+            userlib::sys_reply(msg.sender, userlib::ResponseCode::SUCCESS, &[]);
         }
     };
 
