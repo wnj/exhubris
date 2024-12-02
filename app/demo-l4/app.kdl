@@ -32,6 +32,21 @@ task "sys" {
     uses-peripheral "gpios"
 }
 
+task "l4blinky" {
+    workspace-crate "l4blinky"
+    stack-size 256
+    priority 3
+    features "chip-stm32l412kb"
+    uses-task "sys"
+    notification "timer"
+    config {
+        pins {
+            - "C15"
+            - "C14"
+        }
+    }
+}
+
 // IPC server.
 /-task "pong" {
     workspace-crate "pong"

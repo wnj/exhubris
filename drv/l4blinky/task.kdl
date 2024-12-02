@@ -1,0 +1,86 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// The task name here is mostly just used to talk about the task.
+task "uart-echo"
+
+// Since this targets a specific processor architecture and is not very
+// customizable, there's a default stack size that is likely to hold across all
+// uses.
+stack-size 160
+
+build {
+    // Enable chip-specific Cargo features that we wind up passing through to the
+    // metapac.
+    //
+    // This also ensures that this task is not used on some random other processor,
+    // because the match is required to be exhaustive.
+    match "chip" {
+        "STM32G031K8" {
+            features "chip-stm32g031k8"
+        }
+        // When you need some other STM32G0, add it here, and also in Cargo.toml,
+        // and also in src/main.rs... sometimes I hate the rust embedded ecosystem
+    }
+}
+
+// We have a required dependence on a task we call 'sys'. An
+// application may bind it to a task of a different name, of
+// course.
+uses-task "sys"
+
+uses-peripheral "usart2"
+
+config {
+    type "object"; unevaluatedProperties false
+    properties {
+        uart-clock-hz {
+            type "number"; minimum 1; maximum 0xFFFF_FFFF
+        }
+        baud-rate {
+            type "number"; minimum 1; maximum 0xFFFF_FFFF
+        }
+        pins {
+            type "array"; minItems 2; maxItems 2; uniqueItems true
+            items {
+                type "object"; unevaluatedProperties false
+                properties {
+                    name {
+                        type "string"; pattern "^[A-E][0-9]{1,2}$"
+                    }
+                    af {
+                        type "number"; minimum 0; maximum 7
+                    }
+                }
+            }
+        }
+    }
+}
