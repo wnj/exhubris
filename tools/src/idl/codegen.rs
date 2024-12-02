@@ -7,8 +7,9 @@ use syn::Ident;
 use super::{EnumBodyDef, EnumCaseDef, EnumDef, InterfaceDef, MethodDef, PrimType, TypeDef, ValueType};
 
 pub fn format_code(ts: &proc_macro2::TokenStream) -> String {
-    let Ok(ast) = syn::parse_file(&ts.to_string()) else {
-        panic!("unable to format: {ts}")
+    let ast = match syn::parse_file(&ts.to_string()) {
+        Ok(ast) => ast,
+        Err(e) => panic!("unable to format ({e}): {ts}"),
     };
     prettyplease::unparse(&ast)
 }
@@ -18,6 +19,10 @@ pub fn generate_server(
 ) -> miette::Result<proc_macro2::TokenStream> {
     let trait_name = interface.name.value().to_case(Case::Pascal);
     let trait_name = quote::format_ident!("{trait_name}");
+
+    let const_name = interface.name.value().to_case(Case::ScreamingSnake);
+    let const_name = quote::format_ident!("{const_name}_BUFFER_SIZE");
+
     let methods = interface.methods.iter().map(|(name, method)| {
         generate_server_trait_method(name, method)
     }).collect::<miette::Result<Vec<_>>>()?;
@@ -43,6 +48,8 @@ pub fn generate_server(
         }
 
         #op_enum
+
+        const #const_name: usize = <#op_enum_name as idyll_runtime::ServerOp>::INCOMING_SIZE;
 
         impl<'a, T> idyll_runtime::Server<#op_enum_name> for (core::marker::PhantomData<#op_enum_name>, &'a mut T)
             where T: #trait_name
@@ -327,6 +334,18 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
             #op => Ok(#enumname::#discrim),
         }
     }).collect::<Vec<_>>();
+    let incoming_sizes = iface.methods.values().map(|def| {
+        let args = def.args.values().map(|arg| {
+            let ty = generate_type(&arg.type_)?;
+            Ok(quote::quote! {
+                <#ty as hubpack::SerializedSize>::MAX_SIZE
+            })
+        }).collect::<miette::Result<Vec<_>>>()?;
+        Ok(quote::quote! {
+            #(#args)+*
+        })
+    }).collect::<miette::Result<Vec<_>>>()?;
+
     Ok((
         enumname.clone(),
         quote! {
@@ -334,6 +353,12 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
             #[repr(u16)]
             enum #enumname {
                 #(#cases)*
+            }
+
+            impl idyll_runtime::ServerOp for #enumname {
+                const INCOMING_SIZE: usize = idyll_runtime::const_max(&[
+                    #(#incoming_sizes),*
+                ]);
             }
 
             impl TryFrom<u16> for #enumname {

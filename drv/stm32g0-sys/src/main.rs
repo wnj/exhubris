@@ -10,7 +10,7 @@ use userlib::{sys_recv_open, sys_reply, sys_reply_fault, RecvMessage, ReplyFault
 
 #[export_name = "main"]
 fn main() -> ! {
-    let mut incoming = [MaybeUninit::uninit(); 6];
+    let mut incoming = [MaybeUninit::uninit(); STM_32_G_0_SYS_BUFFER_SIZE];
     let rcc = stm32_metapac::RCC;
 
     // Turn on clock to the GPIO ports.

@@ -17,15 +17,31 @@ impl<E> From<E> for ReplyFaultOr<E> {
     }
 }
 
+pub trait ServerOp: TryFrom<u16> {
+    const INCOMING_SIZE: usize;
+}
+
+pub const fn const_max(sizes: &[usize]) -> usize {
+    let mut max = sizes[0];
+    let mut i = 1;
+    while i < sizes.len() {
+        if sizes[i] > max {
+            max = sizes[i];
+        }
+        i += 1;
+    }
+    max
+}
+
 pub trait Server<Op>
-    where Op: TryFrom<u16>,
+    where Op: ServerOp,
 {
     fn dispatch_op(&mut self, op: Op, rm: &RecvMessage<'_>) -> Result<(), ReplyFaultReason>;
 }
 
 pub fn dispatch<S, O>(server: &mut S, buffer: &mut [MaybeUninit<u8>])
     where for<'a> (PhantomData<O>, &'a mut S): Server<O>,
-          O: TryFrom<u16>,
+          O: ServerOp,
 {
     let rm = userlib::sys_recv_open(buffer, 0);
     if let Err(e) = dispatch_inner(server, &rm) {
@@ -35,7 +51,7 @@ pub fn dispatch<S, O>(server: &mut S, buffer: &mut [MaybeUninit<u8>])
 
 pub fn dispatch_or_event<S, O>(server: &mut S, mask: u32, buffer: &mut [MaybeUninit<u8>])
     where for<'a> (PhantomData<O>, &'a mut S): Server<O>,
-          O: TryFrom<u16>,
+          O: ServerOp,
           S: NotificationHandler,
 {
     let rm = userlib::sys_recv_open(buffer, mask);
@@ -55,7 +71,7 @@ pub trait NotificationHandler {
 
 fn dispatch_inner<S, O>(server: &mut S, rm: &RecvMessage<'_>) -> Result<(), ReplyFaultReason>
     where for<'a> (PhantomData<O>, &'a mut S): Server<O>,
-          O: TryFrom<u16>,
+          O: ServerOp,
 {
     match O::try_from(rm.operation_or_notification as u16) {
         Err(_) => Err(ReplyFaultReason::UndefinedOperation),
