@@ -31,6 +31,22 @@ memory {
     }
 }
 
+peripheral "crs" {
+    base 0x4000_6000
+    size 0x400
+}
+
+peripheral "usbfs_and_sram" {
+    base 0x4000_6800
+    size 0x800
+    irq "irq" 67
+}
+
+peripheral "pwr" {
+    base 0x4000_7000
+    size 0x400
+}
+
 peripheral "rcc" {
     base 0x4002_1000
     size 0x400
