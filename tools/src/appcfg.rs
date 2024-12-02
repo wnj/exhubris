@@ -520,11 +520,16 @@ pub fn parse_task(
             .map(|(name, node)| (name, *node.span()))
             .collect();
 
+        let sw_nots = get_uniquely_named_children(doc, "notification")?;
+
         let mut notifications = IndexSet::new();
         for peripheral in peripherals.values() {
             for notname in peripheral.value().interrupts.values() {
                 notifications.insert(notname.to_string());
             }
+        }
+        for notname in sw_nots.keys() {
+            notifications.insert(notname.to_string());
         }
 
         let config = get_unique_optional_child(doc, "config")?
