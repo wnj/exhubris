@@ -121,8 +121,7 @@ fn parse_method(
     let leases = get_uniquely_named_children(doc, "lease")?
         .into_iter()
         .map(|(name, node)| {
-            required_children(node)
-                .and_then(parse_lease)
+            parse_lease(node)
                 .map(|a| (name, a))
         })
         .collect::<miette::Result<IndexMap<String, _>>>()?;
@@ -168,8 +167,31 @@ fn parse_arg(node: &KdlNode) -> miette::Result<ArgDef> {
     }
 }
 
-fn parse_lease(_doc: &KdlDocument) -> miette::Result<LeaseDef> {
-    todo!()
+fn parse_lease(node: &KdlNode) -> miette::Result<LeaseDef> {
+    // Simple case?
+    let e = node.entries();
+    if e.len() == 2 && e[0].name().is_none() && e[1].name().is_none() {
+        let Some(typename) = e[1].value().as_string() else {
+            bail!(
+                labels=[LabeledSpan::at(*e[1].span(), "not a string")],
+                "argument type should be a string"
+            )
+        };
+        let children = required_children(node)?;
+        let read = get_unique_bool(children, "read")?;
+        let write = get_unique_bool(children, "read")?;
+
+        Ok(LeaseDef {
+            type_: parse_value_type_or_slice(typename)?,
+            read,
+            write,
+        })
+    } else {
+        bail!(
+            labels=[LabeledSpan::at(*node.span(), "wrong argument count")],
+            "arg should have two arguments, name and type"
+        )
+    }
 }
 
 fn parse_value_type(s: &str) -> miette::Result<ValueType> {
@@ -194,11 +216,21 @@ fn parse_value_type(s: &str) -> miette::Result<ValueType> {
         "bool" => Ok(ValueType::Prim(PrimType::Bool)),
 
         _ if s.starts_with('[') => {
-            unimplemented!("array/slice types");
+            if !s.ends_with(']') {
+                bail!("malformed array/slice type: {s}");
+            }
+            let middle = s.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
+            if let Some((element, count)) = middle.rsplit_once(';') {
+                let count = count.trim().parse().into_diagnostic()?;
+                let element = Box::new(parse_value_type(element)?);
+                Ok(ValueType::Array(element, count))
+            } else {
+                bail!("array type missing semicolon: {s}");
+            }
         }
 
         _ if s.starts_with('(') => {
-            unimplemented!("tuple types");
+            unimplemented!("tuple types: {s:?}");
         }
 
         _ => {
@@ -223,6 +255,22 @@ fn parse_value_type(s: &str) -> miette::Result<ValueType> {
             })
         }
     }
+}
+
+fn parse_value_type_or_slice(s: &str) -> miette::Result<ValueTypeOrSlice> {
+    let s = s.trim();
+    parse_value_type(s)
+        .map(ValueTypeOrSlice::Val)
+        .or_else(|e| {
+            if s.starts_with('[') && s.ends_with(']') {
+                // Try parsing as a slice.
+                let inner = s.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
+                let element = parse_value_type(inner)?;
+                Ok(ValueTypeOrSlice::Slice { element })
+            } else {
+                Err(e)
+            }
+        })
 }
 
 #[derive(Clone, Debug)]
@@ -285,7 +333,6 @@ pub struct LeaseDef {
     pub type_: ValueTypeOrSlice,
     pub read: bool,
     pub write: bool,
-    pub max_len: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -293,7 +340,6 @@ pub enum ValueTypeOrSlice {
     Val(ValueType),
     Slice {
         element: ValueType,
-        max_len: Option<u32>,
     },
 }
 
