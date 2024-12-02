@@ -6,7 +6,7 @@
 use core::mem::MaybeUninit;
 
 use stm32_metapac::gpio::vals::{Moder, Odr};
-use userlib::{sys_recv_open, sys_reply, sys_reply_fault, RecvMessage, ReplyFaultReason, ResponseCode};
+use userlib::{RecvMessage, ReplyFaultReason};
 
 #[export_name = "main"]
 fn main() -> ! {
