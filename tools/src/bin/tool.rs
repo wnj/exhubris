@@ -825,12 +825,12 @@ fn relink_for_size(
 
         if phdr.p_vaddr != phdr.p_paddr {
             let (regname, _reg) = app.board.chip.memory.iter()
-                .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_vaddr && (phdr.p_paddr + phdr.p_filesz) <= (reg.value().base.value() + reg.value().size.value()))
+                .find(|(_name, reg)| *reg.value().base.value() <= phdr.p_paddr && (phdr.p_paddr + phdr.p_filesz) <= (reg.value().base.value() + reg.value().size.value()))
                 .expect("internal inconsistency");
 
             let sz = region_sizes.get_mut(regname).expect("internal inconsistency");
             sz.start = u64::min(sz.start, phdr.p_paddr);
-            sz.end = u64::min(sz.end, phdr.p_paddr + phdr.p_filesz);
+            sz.end = u64::max(sz.end, phdr.p_paddr + phdr.p_filesz);
         }
     }
     Ok(region_sizes)
