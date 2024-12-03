@@ -8,6 +8,7 @@ use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicUsize, Ordering, AtomicU8};
 
+use idyll_runtime::{Leased, Read};
 use num_traits::FromPrimitive as _;
 use protocol::{Dir, Recipient, RequestTypeType, StdRequestCode};
 use userlib::{RecvMessage, ReplyFaultReason};
@@ -319,7 +320,12 @@ impl idyll_runtime::NotificationHandler for Server {
 }
 
 impl UsbHid for Server {
-    fn enqueue_report(&mut self, _full_msg: &RecvMessage<'_>, _endpoint:u8) -> Result<bool, ReplyFaultReason> {
+    fn enqueue_report(
+        &mut self,
+        _full_msg: &RecvMessage<'_>,
+        _endpoint: u8,
+        _data: Leased<Read, u8>,
+    ) -> Result<bool, ReplyFaultReason> {
         Err(ReplyFaultReason::UndefinedOperation)
     }
 }

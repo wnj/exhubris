@@ -298,11 +298,27 @@ pub fn generate_server_trait_method(
         let text = text.value();
         quote! { #[doc = #text] }
     });
-    let args = def.args.iter().map(|(name, arg)| {
+    let mut args = def.args.iter().map(|(name, arg)| {
         let ty = generate_type(&arg.type_)?;
         let name = format_ident!("{name}");
         Ok(quote! { #name: #ty })
     }).collect::<miette::Result<Vec<_>>>()?;
+    for (lease_name, lease_def) in &def.leases {
+        let lease_name = format_ident!("{lease_name}");
+        let ty = generate_type(&lease_def.type_)?;
+        let att = match (lease_def.read, lease_def.write) {
+            (false, false) => {
+                // ummmm
+                quote! { () }
+            }
+            (true, false) => quote! { idyll_runtime::Read },
+            (false, true) => quote! { idyll_runtime::Write },
+            (true, true) => quote! { idyll_runtime::ReadWrite },
+        };
+        args.push(quote! {
+            #lease_name: idyll_runtime::Leased<#att, #ty>
+        });
+    }
     let return_type = if let Some(rt) = &def.result {
         let p = generate_type(rt.value())?;
         quote! { Result<#p, userlib::ReplyFaultReason> }
@@ -378,10 +394,37 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
     let argtypes = def.args.values().map(|a| generate_type(&a.type_))
         .collect::<miette::Result<Vec<_>>>()?;
 
-    let arg_expansion = (0..def.args.len()).map(|i| {
+    let mut arg_expansion = (0..def.args.len()).map(|i| {
         let f = Literal::usize_unsuffixed(i);
         quote! { args.#f }
     }).collect::<Vec<_>>();
+    for i in 0..def.leases.len() {
+        let n = Literal::usize_unsuffixed(i);
+        arg_expansion.push(quote! { leases.#n });
+    }
+
+    let leases = def.leases.values().enumerate().map(|(i, lease)| {
+        let ty = generate_type(&lease.type_)?;
+        let att = match (lease.read, lease.write) {
+            (false, false) => {
+                // ummmm
+                quote! { () }
+            }
+            (true, false) => quote! { idyll_runtime::Read },
+            (false, true) => quote! { idyll_runtime::Write },
+            (true, true) => quote! { idyll_runtime::ReadWrite },
+        };
+        Ok(quote! {
+            idyll_runtime::Leased::<#att, #ty>::new(msg.sender, #i)
+                .ok_or(ReplyFaultReason::BadLeases)?
+        })
+    }).collect::<miette::Result<Vec<_>>>()?;
+
+    let leases = if leases.is_empty() {
+        quote! {}
+    } else {
+        quote! { let leases = (#(#leases,)*); }
+    };
 
     let respond = if let Some(rty) = &def.result {
         let rty = generate_type(rty.value())?;
@@ -402,6 +445,7 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
         let args = hubpack::deserialize::<(#(#argtypes,)*)>(msg_data)
             .map_err(|_| ReplyFaultReason::BadMessageContents)?
             .0;
+        #leases
         let r = self.1.#method_name(msg, #(#arg_expansion),*)?;
         #respond
         Ok(())

@@ -9,7 +9,7 @@ method "enqueue_report" {
 
     operation 0
     arg "endpoint" "u8"
-    lease "report" "[u8]" {
+    lease "report" "u8" {
         read
     }
 

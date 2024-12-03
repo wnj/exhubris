@@ -179,10 +179,10 @@ fn parse_lease(node: &KdlNode) -> miette::Result<LeaseDef> {
         };
         let children = required_children(node)?;
         let read = get_unique_bool(children, "read")?;
-        let write = get_unique_bool(children, "read")?;
+        let write = get_unique_bool(children, "write")?;
 
         Ok(LeaseDef {
-            type_: parse_value_type_or_slice(typename)?,
+            type_: parse_value_type(typename)?,
             read,
             write,
         })
@@ -257,22 +257,6 @@ fn parse_value_type(s: &str) -> miette::Result<ValueType> {
     }
 }
 
-fn parse_value_type_or_slice(s: &str) -> miette::Result<ValueTypeOrSlice> {
-    let s = s.trim();
-    parse_value_type(s)
-        .map(ValueTypeOrSlice::Val)
-        .or_else(|e| {
-            if s.starts_with('[') && s.ends_with(']') {
-                // Try parsing as a slice.
-                let inner = s.strip_prefix('[').unwrap().strip_suffix(']').unwrap();
-                let element = parse_value_type(inner)?;
-                Ok(ValueTypeOrSlice::Slice { element })
-            } else {
-                Err(e)
-            }
-        })
-}
-
 #[derive(Clone, Debug)]
 pub struct InterfaceDef {
     pub name: Spanned<String>,
@@ -330,7 +314,7 @@ pub struct ArgDef {
 
 #[derive(Clone, Debug)]
 pub struct LeaseDef {
-    pub type_: ValueTypeOrSlice,
+    pub type_: ValueType,
     pub read: bool,
     pub write: bool,
 }
