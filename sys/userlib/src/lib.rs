@@ -12,6 +12,7 @@ pub enum Sysnum {
     IrqControl = 7,
     Panic = 8,
     GetTimer = 9,
+    Post = 11,
     ReplyFault = 12,
 }
 
@@ -127,6 +128,9 @@ pub use self::arch::sys_borrow_read;
 
 #[doc(inline)]
 pub use self::arch::sys_borrow_write;
+
+#[doc(inline)]
+pub use self::arch::sys_post;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ResponseCode(u32);

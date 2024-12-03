@@ -942,6 +942,64 @@ sys_borrow_info_stub:
     sysnum = const Sysnum::BorrowInfo as u32,
 );
 
+pub fn sys_post(task: TaskId, notifications: u32) -> Result<(), TaskDeath> {
+    let rc = unsafe {
+        sys_post_stub(
+            task.0 as u32,
+            notifications,
+        )
+    };
+    let retval = ResponseCode(rc);
+    if let Ok(e) = TaskDeath::try_from(retval) {
+        Err(e)
+    } else {
+        Ok(())
+    }
+}
+
+global_asm!("
+.section .text.sys_post_stub
+.globl sys_post_stub
+.type sys_post_stub,function
+sys_post_stub:
+    .cfi_startproc
+
+    @ Stash the register values that we'll use to carry arguments.
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r4, -8
+    .cfi_offset r5, -4
+
+    mov r4, r11
+    push {{r4}}
+    .cfi_adjust_cfa_offset 4
+    .cfi_offset r11, -12
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments into place.
+    mov r4, r0
+    mov r5, r1
+
+    svc #0
+
+    @ Copy outputs into place.
+    mov r0, r4
+
+    @ Restore the registers.
+    pop {{r4}}
+    .cfi_adjust_cfa_offset -4
+    mov r11, r4
+    pop {{r4-r5}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::Post as u32,
+);
 
 extern "C" {
     /// Low-level send syscall stub.
@@ -1057,6 +1115,8 @@ extern "C" {
     fn sys_borrow_info_stub(tid_bits: u32, index: u32, out: *mut AbiBorrowInfo);
     fn sys_borrow_read_stub(tid_bits: u32, index: u32, offset: u32, dest: *mut u8, dest_len: usize) -> u64;
     fn sys_borrow_write_stub(tid_bits: u32, index: u32, offset: u32, src: *const u8, src_len: usize) -> u64;
+
+    fn sys_post_stub(tid_bits: u32, notification: u32) -> u32;
 }
 
 cfg_if::cfg_if! {

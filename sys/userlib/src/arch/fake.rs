@@ -104,3 +104,10 @@ pub fn sys_borrow_info(
 ) -> Option<crate::BorrowInfo> {
     unimplemented!()
 }
+
+pub fn sys_post(
+    _task: TaskId,
+    _notifications: u32,
+) -> Result<(), TaskDeath> {
+    unimplemented!()
+}
