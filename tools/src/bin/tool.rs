@@ -172,6 +172,8 @@ fn main() -> miette::Result<()> {
             for (region_name, regallocs) in allocs.by_region() {
                 let mut regallocs = regallocs.iter().collect::<Vec<_>>();
                 regallocs.sort_by_key(|(_name, ta)| *ta.actual.start());
+                let mut total = 0;
+                let mut loss = 0;
 
                 let mut last = None;
                 for (task_name, talloc) in regallocs {
@@ -180,9 +182,9 @@ fn main() -> miette::Result<()> {
 
                     if let Some(last) = last {
                         if *range.start() != last + 1 {
-                            dbg!(range.start());
-                            dbg!(last);
                             let pad_size = *range.start() - (last + 1);
+                            total += pad_size;
+                            loss += pad_size;
                             table.add_row([
                                 region_name.to_string(),
                                 "-pad-".to_string(),
@@ -203,9 +205,19 @@ fn main() -> miette::Result<()> {
                         Size::from_bytes(size).to_string(),
                         Size::from_bytes(internal_pad).to_string(),
                     ]);
+                    total += size;
+                    loss += internal_pad;
 
                     last = Some(*range.end());
                 }
+                table.add_row([
+                    region_name.to_string(),
+                    "(total)".to_string(),
+                    String::new(),
+                    String::new(),
+                    Size::from_bytes(total).to_string(),
+                    Size::from_bytes(loss).to_string(),
+                ]);
             }
             println!("{table}");
             
