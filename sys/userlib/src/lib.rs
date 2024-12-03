@@ -6,6 +6,9 @@ pub enum Sysnum {
     Recv = 1,
     Reply = 2,
     SetTimer = 3,
+    BorrowRead = 4,
+    BorrowWrite = 5,
+    BorrowInfo = 6,
     IrqControl = 7,
     Panic = 8,
     GetTimer = 9,
@@ -116,6 +119,15 @@ pub use self::arch::sys_get_timer;
 #[doc(inline)]
 pub use self::arch::sys_enable_irq;
 
+#[doc(inline)]
+pub use self::arch::sys_borrow_info;
+
+#[doc(inline)]
+pub use self::arch::sys_borrow_read;
+
+#[doc(inline)]
+pub use self::arch::sys_borrow_write;
+
 #[derive(Copy, Clone, Debug)]
 pub struct ResponseCode(u32);
 
@@ -164,6 +176,12 @@ pub struct Truncated;
 pub struct TimerSettings {
     pub now: u64,
     pub alarm: Option<(u64, u32)>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BorrowInfo {
+    pub atts: u32,
+    pub len: usize,
 }
 
 #[derive(Copy, Clone, Debug)]

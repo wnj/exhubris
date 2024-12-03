@@ -709,6 +709,240 @@ sys_irq_control_stub:
     sysnum = const Sysnum::IrqControl as u32,
 );
 
+#[repr(C)]
+struct AbiBorrowInfo {
+    rc: u32,
+    atts: u32,
+    len: u32,
+}
+
+#[inline(always)]
+pub fn sys_borrow_read(
+    lender: TaskId,
+    index: usize,
+    offset: usize,
+    dest: &mut [u8],
+) -> Option<usize> {
+    let info64 = unsafe {
+        sys_borrow_read_stub(
+            lender.0 as u32,
+            index as u32,
+            offset as u32,
+            dest.as_mut_ptr(),
+            dest.len(),
+        )
+    };
+    if info64 as u32 == 0 {
+        Some((info64 >> 32) as usize)
+    } else {
+        None
+    }
+}
+
+#[inline(always)]
+pub fn sys_borrow_write(
+    lender: TaskId,
+    index: usize,
+    offset: usize,
+    src: &[u8],
+) -> Option<usize> {
+    let info64 = unsafe {
+        sys_borrow_write_stub(
+            lender.0 as u32,
+            index as u32,
+            offset as u32,
+            src.as_ptr(),
+            src.len(),
+        )
+    };
+    if info64 as u32 == 0 {
+        Some((info64 >> 32) as usize)
+    } else {
+        None
+    }
+}
+
+#[inline(always)]
+pub fn sys_borrow_info(
+    lender: TaskId,
+    index: usize,
+) -> Option<crate::BorrowInfo> {
+    let mut info = MaybeUninit::uninit();
+    unsafe {
+        sys_borrow_info_stub(
+            lender.0 as u32,
+            index as u32,
+            info.as_mut_ptr(),
+        )
+    }
+    let info = unsafe { info.assume_init() };
+
+    if info.rc == 0 {
+        Some(crate::BorrowInfo {
+            atts: info.atts,
+            len: info.len as usize,
+        })
+    } else {
+        None
+    }
+}
+
+
+global_asm!("
+.section .text.sys_borrow_read_stub
+.globl sys_borrow_read_stub
+.type sys_borrow_read_stub,function
+sys_borrow_read_stub:
+    .cfi_startproc
+
+    @ Stash the register values that we'll use to carry arguments.
+    push {{r4-r7}}
+    .cfi_adjust_cfa_offset 16
+    .cfi_offset r4, -16
+    .cfi_offset r5, -12
+    .cfi_offset r6, -8
+    .cfi_offset r7, -4
+
+    mov r4, r8
+    mov r5, r11
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r8, -24
+    .cfi_offset r11, -20
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments into place.
+    ldr r4, [sp, #(6 * 4)]
+    mov r8, r4
+
+    mov r4, r0
+    mov r5, r1
+    mov r6, r2
+    mov r7, r3
+
+    svc #0
+
+    @ Copy outputs into place.
+    mov r0, r4
+    mov r1, r5
+
+    @ Restore the registers.
+    pop {{r4-r5}}
+    .cfi_adjust_cfa_offset -8
+    mov r8, r4
+    mov r11, r5
+    pop {{r4-r7}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::BorrowRead as u32,
+);
+
+global_asm!("
+.section .text.sys_borrow_write_stub
+.globl sys_borrow_write_stub
+.type sys_borrow_write_stub,function
+sys_borrow_write_stub:
+    .cfi_startproc
+
+    @ Stash the register values that we'll use to carry arguments.
+    push {{r4-r7}}
+    .cfi_adjust_cfa_offset 16
+    .cfi_offset r4, -16
+    .cfi_offset r5, -12
+    .cfi_offset r6, -8
+    .cfi_offset r7, -4
+
+    mov r4, r8
+    mov r5, r11
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r8, -24
+    .cfi_offset r11, -20
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments into place.
+    ldr r4, [sp, #(6 * 4)]
+    mov r8, r4
+
+    mov r4, r0
+    mov r5, r1
+    mov r6, r2
+    mov r7, r3
+
+    svc #0
+
+    @ Copy outputs into place.
+    mov r0, r4
+    mov r1, r5
+
+    @ Restore the registers.
+    pop {{r4-r5}}
+    .cfi_adjust_cfa_offset -8
+    mov r8, r4
+    mov r11, r5
+    pop {{r4-r7}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::BorrowWrite as u32,
+);
+
+global_asm!("
+.section .text.sys_borrow_info_stub
+.globl sys_borrow_info_stub
+.type sys_borrow_info_stub,function
+sys_borrow_info_stub:
+    .cfi_startproc
+
+    @ Stash the register values that we'll use to carry arguments.
+    push {{r4-r5}}
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset r4, -8
+    .cfi_offset r5, -4
+
+    mov r4, r11
+    push {{r4}}
+    .cfi_adjust_cfa_offset 4
+    .cfi_offset r11, -12
+
+    @ Materialize the sysnum constant.
+    eors r4, r4
+    adds r4, #{sysnum}
+    mov r11, r4
+
+    @ Move arguments into place.
+    mov r4, r0
+    mov r5, r1
+
+    svc #0
+
+    @ Copy outputs into place.
+    stm r2!, {{r4, r5, r6}}
+
+    @ Restore the registers.
+    pop {{r4}}
+    .cfi_adjust_cfa_offset -4
+    mov r11, r4
+    pop {{r4-r5}}
+    bx lr
+
+    .cfi_endproc
+",
+    sysnum = const Sysnum::BorrowInfo as u32,
+);
+
+
 extern "C" {
     /// Low-level send syscall stub.
     ///
@@ -819,6 +1053,10 @@ extern "C" {
     fn sys_get_timer_stub() -> AbiTimerSettings;
 
     fn sys_irq_control_stub(bits: u32, status: u32);
+
+    fn sys_borrow_info_stub(tid_bits: u32, index: u32, out: *mut AbiBorrowInfo);
+    fn sys_borrow_read_stub(tid_bits: u32, index: u32, offset: u32, dest: *mut u8, dest_len: usize) -> u64;
+    fn sys_borrow_write_stub(tid_bits: u32, index: u32, offset: u32, src: *const u8, src_len: usize) -> u64;
 }
 
 cfg_if::cfg_if! {

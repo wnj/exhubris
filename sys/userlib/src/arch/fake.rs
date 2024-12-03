@@ -79,3 +79,28 @@ pub fn sys_get_timer() -> TimerSettings {
 pub fn sys_enable_irq(_: u32) {
     unimplemented!()
 }
+
+pub fn sys_borrow_read(
+    _lender: TaskId,
+    _index: usize,
+    _offset: usize,
+    _dest: &mut [u8],
+) -> Option<usize> {
+    unimplemented!()
+}
+
+pub fn sys_borrow_write(
+    _lender: TaskId,
+    _index: usize,
+    _offset: usize,
+    _src: &[u8],
+) -> Option<usize> {
+    unimplemented!()
+}
+
+pub fn sys_borrow_info(
+    _lender: TaskId,
+    _index: usize,
+) -> Option<crate::BorrowInfo> {
+    unimplemented!()
+}
