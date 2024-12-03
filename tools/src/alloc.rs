@@ -86,7 +86,7 @@ pub fn allocate_space(
         while !reqs.is_empty() {
             // Attempt to satisfy each request without increasing the alignment.
             let start_len = reqs.len();
-            reqs.retain(|(taskname, requested_size)| {
+            for (i, (taskname, requested_size)) in reqs.iter().enumerate() {
                 let size = target_spec.round_allocation_size(**requested_size);
                 let reqd_addr = target_spec.align_for_allocation_size(addr, size);
                 if reqd_addr == addr {
@@ -98,12 +98,10 @@ pub fn allocate_space(
                             actual: addr..=addr + (size - 1),
                         });
                     addr += size;
-                    false
-                } else {
-                    // Keep this for the next pass.
-                    true
+                    reqs.remove(i);
+                    break;
                 }
-            });
+            }
 
             if !reqs.is_empty() && reqs.len() == start_len {
                 addr = target_spec.align_to_next_larger_boundary(addr);
