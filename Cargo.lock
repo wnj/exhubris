@@ -1535,6 +1535,7 @@ source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris
 name = "userlib"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "cfg-if",
  "cortex-m",
 ]

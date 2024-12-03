@@ -1,6 +1,6 @@
 use core::arch::global_asm;
 use core::mem::MaybeUninit;
-use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings, ReplyFaultReason};
+use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings, ReplyFaultReason, LeaseAttributes};
 
 extern "Rust" {
     /// Unresolved symbol for the application main function.
@@ -779,7 +779,7 @@ pub fn sys_borrow_info(
 
     if info.rc == 0 {
         Some(crate::BorrowInfo {
-            atts: info.atts,
+            atts: LeaseAttributes::from_bits_truncate(info.atts),
             len: info.len as usize,
         })
     } else {

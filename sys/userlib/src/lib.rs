@@ -180,7 +180,7 @@ pub struct TimerSettings {
 
 #[derive(Copy, Clone, Debug)]
 pub struct BorrowInfo {
-    pub atts: u32,
+    pub atts: LeaseAttributes,
     pub len: usize,
 }
 
@@ -424,6 +424,17 @@ pub fn send_with_retry_on_death(
                 );
             }
         }
+    }
+}
+
+bitflags::bitflags! {
+    #[derive(Copy, Clone, Debug)]
+    #[repr(transparent)]
+    pub struct LeaseAttributes: u32 {
+        const READ = 1 << 0;
+        const WRITE = 1 << 1;
+
+        const _ = !0;
     }
 }
 
