@@ -14,5 +14,11 @@ method "enqueue_report" {
     }
 
     // true if enqueued, false if the previous report is still pending.
-    result "bool"
+    result "Result<bool, EnqueueError>"
+}
+
+enum "EnqueueError" {
+    on-task-death "Died"
+
+    case "Died"
 }

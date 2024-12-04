@@ -107,17 +107,40 @@ pub fn generate_client_method(
         let text = text.value();
         quote! { #[doc = #text] }
     });
+
     let args = def.args.iter().map(|(name, arg)| {
         let ty = generate_type(&arg.type_)?;
         let name = format_ident!("{name}");
         Ok(quote! { #name: #ty })
     }).collect::<miette::Result<Vec<_>>>()?;
+
     let argtypes = def.args.values().map(|arg| {
         generate_type(&arg.type_)
     }).collect::<miette::Result<Vec<_>>>()?;
+
     let argnames = def.args.keys().map(|name| {
         format_ident!("{name}")
     }).collect::<Vec<_>>();
+
+    let lease_args = {
+        let mut lease_args = vec![];
+        for (lease_name, lease_def) in &def.leases {
+            let lease_name = format_ident!("{lease_name}");
+            let lease_type = generate_type(&lease_def.type_)?;
+            let lease_type = if lease_def.write {
+                quote! { &mut [#lease_type] }
+            } else {
+                quote! { & [#lease_type] }
+            };
+            lease_args.push(quote! {
+                #lease_name: #lease_type
+            });
+        }
+        lease_args
+    };
+    let args_and_leases = args.iter().chain(&lease_args)
+        .collect::<Vec<_>>();
+
     let return_type = def.result.as_ref().map(|t| generate_type(t.value()))
         .unwrap_or_else(|| Ok(quote! { () }))?;
     let operation = def.operation;
@@ -131,7 +154,7 @@ pub fn generate_client_method(
                 #operation,
                 &argbuffer,
                 &mut retbuffer,
-                &mut [],
+                &mut leases,
             )
         }
     } else {
@@ -143,11 +166,11 @@ pub fn generate_client_method(
         quote! {
             {
                 let send_result = userlib::sys_send(
-                    &self.0,
+                    self.0.get(),
                     #operation,
                     &argbuffer,
                     &mut retbuffer,
-                    &mut [],
+                    &mut leases,
                 );
                 match send_result {
                     Ok(rc_and_len) => rc_and_len,
@@ -155,7 +178,7 @@ pub fn generate_client_method(
                         self.0.set(
                             self.0.get().with_generation(dead.new_generation())
                         );
-                        return <#return_type>::from(dead);
+                        return <#return_type as idyll_runtime::FromTaskDeath>::from_task_death(dead);
                     }
                 }
             }
@@ -177,14 +200,41 @@ pub fn generate_client_method(
             let _ = (rc, len);
         }
     };
+
+    let leases = def.leases.iter().map(|(lease_name, lease_def)| {
+        let method_name = match (lease_def.read, lease_def.write) {
+            (false, false) => format_ident!("no_access"),
+            (true, false) => format_ident!("read_only"),
+            (true, true) => format_ident!("write_only"),
+            (false, true) => format_ident!("read_write"),
+        };
+        let as_bytes = if lease_def.write {
+            quote! { as_bytes_mut }
+        } else {
+            quote! { as_bytes }
+        };
+        let lease_arg_name = format_ident!("{lease_name}");
+        quote! {
+            userlib::Lease::#method_name(
+                zerocopy::IntoBytes::#as_bytes(#lease_arg_name)
+            )
+        }
+    }).collect::<Vec<_>>();
+
+    let args_tuple = quote! { (#(#argtypes,)*) };
+
     let name = format_ident!("{name}");
     Ok(quote! {
         #doc
-        pub fn #name(&self, #(#args,)*) {
-            type ArgsType = (#(#argtypes,)*);
-            let args: ArgsType = (#(#argnames,)*);
-            let mut argbuffer = [0u8; <ArgsType as hubpack::SerializedSize>::MAX_SIZE];
+        pub fn #name(&self, #(#args_and_leases,)*) -> #return_type {
+            let args: #args_tuple = (#(#argnames,)*);
+            let mut argbuffer = [0u8; <#args_tuple as hubpack::SerializedSize>::MAX_SIZE];
             let mut retbuffer = [0u8; <#return_type as hubpack::SerializedSize>::MAX_SIZE];
+
+            let mut leases = [
+                #(#leases),*
+            ];
+
             // Because all the types involved are defined in the file or are
             // from a set of core types, and we used hubpack's size estimate to
             // create the buffer, we never expect this to fail. If it does fail,
@@ -207,11 +257,24 @@ pub fn generate_enum(
         generate_enum_case(name, def)
     }).collect::<miette::Result<Vec<_>>>()?;
     let name = format_ident!("{name}");
+    let from_impl = if let Some(death_case) = &enum_case_def.task_death_case {
+        let death = format_ident!("{death_case}");
+        Some(quote! {
+            impl idyll_runtime::FromTaskDeath for #name {
+                fn from_task_death(_: userlib::TaskDeath) -> Self {
+                    #name::#death
+                }
+            }
+        })
+    } else {
+        None
+    };
     Ok(quote! {
         #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize)]
         pub enum #name {
             #(#cases)*
         }
+        #from_impl
     })
 }
 

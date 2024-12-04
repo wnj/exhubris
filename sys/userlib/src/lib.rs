@@ -60,9 +60,55 @@ pub struct Lease<'a> {
     _marker: PhantomData<&'a mut ()>,
 }
 
+impl<'a> Lease<'a> {
+    pub fn read_only(data: &[u8]) -> Self {
+        Self {
+            inner: AbiLease {
+                attributes: LeaseAttributes::READ,
+                base_address: data.as_ptr(),
+                length: data.len(),
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn read_write(data: &mut [u8]) -> Self {
+        Self {
+            inner: AbiLease {
+                attributes: LeaseAttributes::READ | LeaseAttributes::WRITE,
+                base_address: data.as_mut_ptr(),
+                length: data.len(),
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn write_only(data: &mut [u8]) -> Self {
+        Self {
+            inner: AbiLease {
+                attributes: LeaseAttributes::WRITE,
+                base_address: data.as_mut_ptr(),
+                length: data.len(),
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn no_access(data: &[u8]) -> Self {
+        Self {
+            inner: AbiLease {
+                attributes: LeaseAttributes::empty(),
+                base_address: data.as_ptr(),
+                length: data.len(),
+            },
+            _marker: PhantomData,
+        }
+    }
+}
+
 #[repr(C)]
 struct AbiLease {
-    attributes: u32,
+    attributes: LeaseAttributes,
     base_address: *const u8,
     length: usize,
 }

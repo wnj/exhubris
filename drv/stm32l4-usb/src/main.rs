@@ -325,7 +325,7 @@ impl UsbHid for Server {
         _full_msg: &RecvMessage<'_>,
         _endpoint: u8,
         _data: Leased<Read, u8>,
-    ) -> Result<bool, ReplyFaultReason> {
+    ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
         Err(ReplyFaultReason::UndefinedOperation)
     }
 }

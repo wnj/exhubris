@@ -93,6 +93,16 @@ fn parse_enum(
         }
         def.cases.insert(name, case);
     }
+
+    if let Some(death_case) = get_unique_optional_string_value(doc, "on-task-death")? {
+        if !def.cases.contains_key(death_case.value()) {
+            bail!(
+                labels=[LabeledSpan::at(death_case.span(), "not recognized as a case name")],
+                "on-task-death names a nonexistent case"
+            )
+        }
+        def.task_death_case = Some(death_case.into_value());
+    }
     Ok(def)
 }
 
@@ -283,6 +293,7 @@ pub enum TypeDef {
 #[derive(Clone, Debug, Default)]
 pub struct EnumDef {
     pub cases: IndexMap<String, EnumCaseDef>,
+    pub task_death_case: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]

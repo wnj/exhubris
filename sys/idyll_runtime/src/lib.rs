@@ -2,7 +2,7 @@
 
 use core::{marker::PhantomData, mem::MaybeUninit};
 
-use userlib::{BorrowInfo, LeaseAttributes, RecvMessage, TaskId};
+use userlib::{LeaseAttributes, RecvMessage, TaskDeath, TaskId};
 pub use userlib::ReplyFaultReason;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
@@ -317,3 +317,13 @@ impl<A, T> Leased<A, T>
 /// gone away.
 #[derive(Copy, Clone, Debug)]
 pub struct LenderError;
+
+pub trait FromTaskDeath {
+    fn from_task_death(_: TaskDeath) -> Self;
+}
+
+impl<T, E: FromTaskDeath> FromTaskDeath for Result<T, E> {
+    fn from_task_death(d: TaskDeath) -> Self {
+        Err(E::from_task_death(d))
+    }
+}
