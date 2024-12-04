@@ -527,6 +527,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hubris-build-util"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.7.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hubris-notifications"
 version = "0.1.0"
 dependencies = [
@@ -581,9 +590,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.6.0"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707907fe3c25f5424cce2cb7e1cbcafee6bdbe735ca90ef77c29e84591e5b9da"
+checksum = "62f822373a4fe84d4bb149bf54e584a7f4abec90e072ed49cda0edea5b95471f"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.0",
@@ -1449,7 +1458,7 @@ version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
- "indexmap 2.6.0",
+ "indexmap 2.7.0",
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -1467,7 +1476,7 @@ dependencies = [
  "convert_case",
  "goblin",
  "ihex",
- "indexmap 2.6.0",
+ "indexmap 2.7.0",
  "itertools",
  "kdl",
  "lazy_static",
@@ -1490,6 +1499,7 @@ name = "uart-echo"
 version = "0.1.0"
 dependencies = [
  "drv-stm32g0-sys-api",
+ "hubris-build-util",
  "hubris-notifications",
  "hubris-task-slots",
  "serde_json",

@@ -1201,6 +1201,22 @@ pub fn plan_build(
 
     let hubris_tasks = itertools::join(app.task_names(), ",");
 
+    let mut common_env: BTreeMap<_, _> = [
+        ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
+    ].into_iter().collect();
+    for (index, (name, task)) in app.tasks.iter().enumerate() {
+        let task_info_json = serde_json::json! {
+            {
+                "index": index,
+                "notifications": task.notifications.clone(),
+            }
+        };
+        common_env.insert(
+            format!("HUBRIS_TASK_INFO_{name}"),
+            serde_json::to_string(&task_info_json).unwrap(),
+        );
+    }
+
     // Attempt to locate the cargo package for each task.
     let mut task_plans = IndexMap::new();
     for (name, task) in &app.tasks {
@@ -1213,11 +1229,9 @@ pub fn plan_build(
         let task_slots = ron::to_string(&task_slots).unwrap();
         let task_notes = ron::to_string(&task.notifications).unwrap();
 
-        let mut smuggled_env: BTreeMap<_, _> = [
-            ("HUBRIS_TASKS".to_string(), hubris_tasks.clone()),
-            ("HUBRIS_TASK_SLOTS".to_string(), task_slots),
-            ("HUBRIS_NOTIFICATIONS".to_string(), task_notes),
-        ].into_iter().collect();
+        let mut smuggled_env = common_env.clone();
+        smuggled_env.insert("HUBRIS_TASK_SLOTS".to_string(), task_slots);
+        smuggled_env.insert("HUBRIS_NOTIFICATIONS".to_string(), task_notes);
 
         if let Some(config) = &task.config {
             let ronconfig = serde_json::to_string(config).into_diagnostic()?;

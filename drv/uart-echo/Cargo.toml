@@ -16,4 +16,5 @@ stm32-metapac = { version = "15.0.0" }
 userlib = { workspace = true, features = ["no-panic"] }
 
 [build-dependencies]
+hubris-build-util = { version = "0.1.0", path = "../../sys/build-util" }
 serde_json = "1.0.133"
