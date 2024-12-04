@@ -905,16 +905,18 @@ global_asm!("
 sys_borrow_info_stub:
     .cfi_startproc
 
-    @ Stash the register values that we'll use to carry arguments.
-    push {{r4-r5}}
-    .cfi_adjust_cfa_offset 8
-    .cfi_offset r4, -8
-    .cfi_offset r5, -4
+    @ Stash the register values that we'll use to carry arguments and receive
+    @ results.
+    push {{r4-r6}}
+    .cfi_adjust_cfa_offset 12
+    .cfi_offset r4, -12
+    .cfi_offset r5, -8
+    .cfi_offset r6, -4
 
     mov r4, r11
     push {{r4}}
     .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -12
+    .cfi_offset r11, -16
 
     @ Materialize the sysnum constant.
     eors r4, r4
@@ -934,7 +936,7 @@ sys_borrow_info_stub:
     pop {{r4}}
     .cfi_adjust_cfa_offset -4
     mov r11, r4
-    pop {{r4-r5}}
+    pop {{r4-r6}}
     bx lr
 
     .cfi_endproc
