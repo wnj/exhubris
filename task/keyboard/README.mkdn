@@ -1,0 +1,5 @@
+# Basic IPC generator
+
+This task spams a counterpart, `pong`, with IPC messages. This is intended to
+demonstrate that the IPC facilities work, and shouldn't be included in a real
+application.

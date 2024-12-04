@@ -24,6 +24,8 @@ smart-default = "0.7.1"
 utf16_literal = "0.2.1"
 
 [build-dependencies]
+hubris-build-util = { version = "0.1.0", path = "../../sys/build-util" }
+serde = { version = "1.0.215", features = ["derive"] }
 tools = { version = "0.1.0", path = "../../tools" }
 
 [[bin]]

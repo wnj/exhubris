@@ -175,11 +175,18 @@ pub fn prepare_descriptor(
                 interface_number: 0,
                 alternate_setting: 0,
                 num_endpoints: 1,
-                interface_class: 0xFF, // vendor
-                interface_subclass: 0xFF, // vendor
-                interface_protocol: 0xCB,
+                interface_class: 3,
+                interface_subclass: 1,
+                interface_protocol: 1,
                 interface_string: 2,
                 ..InterfaceDescriptor::default()
+            },
+            hid: crate::hid::HidDescriptor {
+                hid_version: U16::new(0x0101),
+                country_code: 0,
+                descriptor_type: 0x22,
+                descriptor_length: U16::new(62),
+                ..crate::hid::HidDescriptor::default()
             },
             ep: EndpointDescriptor {
                 endpoint_address: 0x81,
@@ -218,6 +225,7 @@ fn write_str(offset: usize, data: &[u16]) -> usize {
 struct CompoundConfig {
     config: ConfigDescriptor,
     iface: InterfaceDescriptor,
+    hid: crate::hid::HidDescriptor,
     ep: EndpointDescriptor,
 }
 

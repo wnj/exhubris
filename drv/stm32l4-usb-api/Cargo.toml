@@ -1,0 +1,14 @@
+[package]
+name = "drv-stm32l4-usb-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hubpack = "0.1.2"
+idyll_runtime = { version = "0.1.0", path = "../../sys/idyll_runtime" }
+serde = { version = "1.0.215", default-features = false, features = ["derive"] }
+userlib.workspace = true
+zerocopy = "0.8.12"
+
+[build-dependencies]
+tools = { version = "0.1.0", path = "../../tools" }

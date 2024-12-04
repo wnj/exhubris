@@ -3,15 +3,17 @@
 
 mod usbsram;
 mod protocol;
+mod hid;
 
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicUsize, Ordering, AtomicU8};
 
+use hid::{HidClassDescriptorType, HidRequestCode};
 use idyll_runtime::{Leased, Read};
 use num_traits::FromPrimitive as _;
 use protocol::{Dir, Recipient, RequestTypeType, StdRequestCode};
-use userlib::{RecvMessage, ReplyFaultReason};
+use userlib::{RecvMessage, ReplyFaultReason, TaskId};
 use drv_stm32l4_sys_api::{Stm32L4Sys, Port, Function};
 use stm32_metapac::usb::vals::{EpType, Stat};
 
@@ -67,6 +69,8 @@ fn main() -> ! {
         usb,
         pending_address: None,
         state: DeviceState::Powered,
+        keyboard_task: TaskId::gen0(KEYBOARD_TASK_INDEX),
+        expected_out: None,
     };
     userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
 
@@ -80,6 +84,8 @@ struct Server {
     usb: stm32_metapac::usb::Usb,
     pending_address: Option<u8>,
     state: DeviceState,
+    keyboard_task: TaskId,
+    expected_out: Option<hid::OutKind>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -147,7 +153,6 @@ impl Server {
                     match (setup.request_type.data_phase_direction(), StdRequestCode::from_u8(setup.request)) {
                         (Dir::HostToDevice, Some(StdRequestCode::SetAddress)) => {
                             let addr = setup.value.get() as u8 & 0x7F;
-                            emit(Event::AddressPending(addr));
                             self.pending_address = Some(addr);
                             usbsram::set_ep_tx_count(ep, 0);
                             self.configure_response(ep, Stat::VALID, Stat::VALID);
@@ -157,7 +162,6 @@ impl Server {
                             emit(Event::GetDescriptor(setup.value.get()));
                             match protocol::prepare_descriptor(&setup, txoff) {
                                 Some(len) => {
-                                    emit(Event::DescriptorReady(len));
                                     usbsram::set_ep_tx_count(ep, setup.length.get().min(len as u16));
                                     self.configure_response(ep, Stat::VALID, Stat::VALID);
                                 }
@@ -170,7 +174,7 @@ impl Server {
                         }
                         (Dir::HostToDevice, Some(StdRequestCode::SetConfiguration)) => {
                             usbsram::set_ep_tx_count(ep, 0);
-                            //self.iface.on_set_config(usb); TODO
+                            self.on_set_config(setup.value.get());
                             self.configure_response(ep, Stat::VALID, Stat::VALID);
                             self.state = DeviceState::Configured;
                         }
@@ -181,23 +185,28 @@ impl Server {
                         }
                     }
                 }
-                //(RequestTypeType::Standard, Recipient::Interface) => {
-                //    // TODO
-                //}
-                //(RequestTypeType::Class, Recipient::Interface) => {
-                //    // TODO
-                //}
+                (RequestTypeType::Standard, Recipient::Interface) => {
+                    self.on_setup_iface_std(&setup);
+                }
+                (RequestTypeType::Class, Recipient::Interface) => {
+                    self.on_setup_iface_class(&setup);
+                }
                 (x, y) => {
                     emit(Event::UnknownTop(x, y));
                     usbsram::set_ep_tx_count(ep, 0);
                     self.configure_response(ep, Stat::STALL, Stat::STALL);
                 }
             }
+        } else {
+            // TODO setup on other endpoints (not required for HID)
+            usbsram::set_ep_tx_count(ep, 0);
+            self.configure_response(ep, Stat::STALL, Stat::STALL);
         }
     }
 
     fn on_out(&mut self, ep: usize) {
         emit(Event::Out(ep));
+        self.on_out_iface(ep);
     }
 
     fn on_in(&mut self, ep: usize) {
@@ -224,6 +233,7 @@ impl Server {
 
             self.configure_response(ep, Stat::VALID, Stat::VALID);
         } else {
+            self.on_in_iface(ep);
         }
     }
 
@@ -234,6 +244,133 @@ impl Server {
             w.set_stat_tx(Stat::from_bits(orig.stat_tx().to_bits() ^ tx.to_bits()));
             w.set_stat_rx(Stat::from_bits(orig.stat_rx().to_bits() ^ rx.to_bits()));
         });
+    }
+
+
+    fn on_set_config(&mut self, config: u16) {
+        emit(Event::SetConfig(config));
+        // Configure EP1 for HID but don't actually load a report yet. We'll NAK
+        // until the keyboard task delivers one.
+        self.usb.epr(1).modify(|w| {
+            let orig = *w;
+
+            w.set_ep_type(EpType::INTERRUPT);
+            w.set_ep_kind(false);
+
+            // Leave dtog_tx/dtog_rx so that they clear themselves.
+
+            // Force stat_tx/stat_rx to NAK.
+            w.set_stat_tx(Stat::from_bits(orig.stat_tx().to_bits() ^ Stat::NAK.to_bits()));
+            w.set_stat_rx(Stat::from_bits(orig.stat_rx().to_bits() ^ Stat::NAK.to_bits()));
+
+            // Respond to endpoint address 1.
+            w.set_ea(1);
+        });
+
+        self.poke_keyboard_task();
+    }
+
+    fn poke_keyboard_task(&mut self) {
+        emit(Event::PokedKeyboard);
+        loop {
+            match userlib::sys_post(self.keyboard_task, KEYBOARD_NOTIFICATION_MASK) {
+                Ok(()) => break,
+                Err(dead) => {
+                    // Update and try again. Since we're higher priority, this
+                    // shouldn't loop more than once.
+                    self.keyboard_task =
+                        self.keyboard_task.with_generation(dead.new_generation());
+                }
+            }
+        }
+    }
+
+    fn on_setup_iface_std(&mut self, setup: &protocol::SetupPacket) {
+        match (setup.request_type.data_phase_direction(), StdRequestCode::from_u8(setup.request)) {
+            (Dir::DeviceToHost, Some(StdRequestCode::GetDescriptor)) => {
+                match HidClassDescriptorType::from_u16(setup.value.get() >> 8) {
+                    Some(HidClassDescriptorType::Report) => {
+                        emit(Event::HidDescriptor);
+                        // HID Report Descriptor
+                        let desc = &hid::BOOT_KBD_DESC;
+                        usbsram::write_bytes(usbsram::get_ep_tx_offset(0), desc);
+                        // Update transmittable count.
+                        usbsram::set_ep_tx_count(0, setup.length.get().min(desc.len() as u16));
+                        self.configure_response(0, Stat::VALID, Stat::VALID);
+                    }
+                    _ => {
+                        // Unknown kind of descriptor.
+                        emit(Event::UnknownIfaceDescriptor);
+                        usbsram::set_ep_tx_count(0, 0);
+                        self.configure_response(0, Stat::STALL, Stat::STALL);
+                    }
+                }
+            }
+            _ => {
+                // Unsupported std operation
+                emit(Event::UnknownIfaceOperation);
+                usbsram::set_ep_tx_count(0, 0);
+                self.configure_response(0, Stat::STALL, Stat::STALL);
+            }
+        }
+    }
+
+    fn on_setup_iface_class(&mut self, setup: &protocol::SetupPacket) {
+         match (setup.request_type.data_phase_direction(), HidRequestCode::from_u8(setup.request)) {
+            (Dir::HostToDevice, Some(HidRequestCode::SetIdle)) => {
+                emit(Event::HidSetIdle);
+                usbsram::set_ep_tx_count(0, 0);
+                self.configure_response(0, Stat::VALID, Stat::VALID);
+            }
+            (Dir::HostToDevice, Some(HidRequestCode::SetReport)) => {
+                emit(Event::HidSetReport);
+                match setup.value.get() {
+                    0x02_00 => {
+                        self.expected_out = Some(hid::OutKind::SetReport);
+                        usbsram::set_ep_tx_count(0, 0);
+                        self.configure_response(0, Stat::VALID, Stat::VALID);
+                    }
+                    _ => {
+                        usbsram::set_ep_tx_count(0, 0);
+                        self.configure_response(0, Stat::STALL, Stat::STALL);
+                    }
+                }
+            }
+            (Dir::HostToDevice, Some(HidRequestCode::SetProtocol)) => {
+                // whatever - our report protocol matches the boot protocol so
+                // it's all the same to us.
+                emit(Event::HidSetProtocol);
+                usbsram::set_ep_tx_count(0, 0);
+                self.configure_response(0, Stat::VALID, Stat::VALID);
+            }
+            _ => {
+                // Unsupported
+                emit(Event::UnknownClassOperation);
+                usbsram::set_ep_tx_count(0, 0);
+                self.configure_response(0, Stat::STALL, Stat::STALL);
+            }
+        }
+   }
+
+    fn on_in_iface(&mut self, ep: usize) {
+        // The host has just read a report. Poke the keyboard task to generate
+        // another one. Note that the hardware flips the EP to NAK after
+        // transmission, we shouldn't have to do that.
+        emit(Event::HidReportCollected);
+        self.poke_keyboard_task();
+    }
+
+    fn on_out_iface(&mut self, ep: usize) {
+        if let Some(kind) = self.expected_out.take() {
+            match kind {
+                hid::OutKind::SetReport => {
+                    let off = usbsram::get_ep_rx_offset(ep);
+                    let leds = usbsram::read16(off) as u8;
+                    // TODO: set the LEDs
+                    emit(Event::Leds(leds));
+                }
+            }
+        }
     }
 }
 
@@ -253,7 +390,6 @@ impl idyll_runtime::NotificationHandler for Server {
             IRQS.fetch_add(1, Ordering::Relaxed);
 
             let istr = self.usb.istr().read();
-            emit(Event::Istr(istr));
 
             // Detect and handle link reset.
             if istr.reset() {
@@ -284,7 +420,6 @@ impl idyll_runtime::NotificationHandler for Server {
                 let ep = usize::from(istr.ep_id() & 0x7);
 
                 let eprv = self.usb.epr(ep).read();
-                emit(Event::Epr(eprv));
 
                 match istr.dir() {
                     stm32_metapac::usb::vals::Dir::FROM => {
@@ -323,35 +458,76 @@ impl UsbHid for Server {
     fn enqueue_report(
         &mut self,
         _full_msg: &RecvMessage<'_>,
-        _endpoint: u8,
-        _data: Leased<Read, u8>,
+        endpoint: u8,
+        data: Leased<Read, u8>,
     ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
-        Err(ReplyFaultReason::UndefinedOperation)
+        match endpoint {
+            1 => {
+                if data.len() > 0x40 {
+                    return Err(ReplyFaultReason::BadLeases);
+                }
+                // Amortize the syscall overhead a _little bit_ without having
+                // to burn 64 bytes of stack.
+                let mut xfer_buffer = [0; 8];
+                for i in (0..data.len()).step_by(8) {
+                    let chunk_end = usize::min(data.len(), i + 8);
+                    // Yes, LLVM should be able to see that this is < 8, but it
+                    // can't, so include this no-op min call to suppress a
+                    // bounds check panic below.
+                    let chunk_len = usize::min(chunk_end - i, 8);
+                    let chunk_buffer = &mut xfer_buffer[..chunk_len];
+                    if data.read_range(i, chunk_buffer).is_err() {
+                        // caller went away, choose an arbitrary reply fault
+                        // code -- it won't be delivered.
+                        return Err(ReplyFaultReason::UndefinedOperation);
+                    }
+                    usbsram::write_bytes(usbsram::get_ep_tx_offset(1), chunk_buffer);
+                }
+                usbsram::set_ep_tx_count(1, data.len() as u16);
+                self.configure_response(1, Stat::VALID, Stat::VALID);
+                emit(Event::HidReportReady);
+                Ok(Ok(true))
+            }
+            _ => {
+                // lol no
+                Err(ReplyFaultReason::BadMessageContents)
+            }
+        }
     }
 }
 
 include!(concat!(env!("OUT_DIR"), "/generated_server.rs"));
+include!(concat!(env!("OUT_DIR"), "/usb_config.rs"));
 
 #[no_mangle]
 static mut EVENTS: [Event; 128] = [Event::Reset; 128];
 #[no_mangle]
 static NEXT_EVENT: AtomicUsize = AtomicUsize::new(0);
 
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 enum Event {
     Reset,
     Setup(usize),
     Out(usize),
     In(usize),
-    AddressPending(u8),
-    DescriptorReady(usize),
     UnknownDescriptor,
     Address(u8),
-    Istr(stm32_metapac::usb::regs::Istr),
-    Epr(stm32_metapac::usb::regs::Epr),
     UnknownStandard(Dir, Option<StdRequestCode>),
     UnknownTop(RequestTypeType, Recipient),
     GetDescriptor(u16),
+    SetConfig(u16),
+    HidDescriptor,
+    UnknownIfaceDescriptor,
+    UnknownIfaceOperation,
+    UnknownClassOperation,
+    HidSetProtocol,
+    HidSetReport,
+    HidSetIdle,
+    HidReportCollected,
+    Leds(u8),
+    HidReportReady,
+    PokedKeyboard,
 }
 
 fn emit(event: Event) {
