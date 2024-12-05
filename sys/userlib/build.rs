@@ -1,6 +1,7 @@
 use std::path::Path;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(hubris_target, values(any()))");
     let target = std::env::var("TARGET").unwrap();
     println!("cargo::rerun-if-env-changed=TARGET");
     println!("cargo::rustc-cfg=hubris_target=\"{target}\"");
