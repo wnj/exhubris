@@ -94,10 +94,31 @@ pub fn sys_send_to_kernel(
 /// the `notification_mask` are always accepted. (If `t` is `TaskId::KERNEL`,
 /// *only* notifications are accepted.)
 ///
-/// Use this form of `sys_recv` when the decision about whether to perform open
-/// or closed receive happens dynamically, at runtime. Otherwise, it's more
-/// efficient to use specialized wrappers like [`sys_recv_open`] or
-/// [`sys_recv_notification`].
+/// # More convenient alternatives
+///
+/// This is the Swiss Army Chainsaw receive operation. It can do anything and is
+/// difficult to hold correctly. Use `sys_recv` when you want to make decisions
+/// about the behavior _dynamically:_
+///
+/// - Changing the notification mask depending on state.
+/// - Switching between open and closed receive.
+///
+/// That's pretty rare in practice. If you don't need those features, consider
+/// these alternatives, which are essentially convenience wrappers:
+///
+/// - [`sys_recv_msg`]: masks notifications. Unlike calling `sys_recv` with a
+///   `notification_mask` of 0, `sys_recv_msg` doesn't make you write an
+///   unreachable `Notification` case.
+///
+/// - [`sys_recv_open`]: accepts messages from any caller. This eliminates the
+///   failure path that returns `TaskDeath`, saving you from needing to handle
+///   it.
+///
+/// - [`sys_recv_msg_open`]: combines both of the above, for cases where you
+///   don't want notifications and aren't picky about who's sending.
+///
+/// - [`sys_recv_notification`]: listens _only_ for notifications, leaving
+///   messages queued. Very handy for waiting for interrupts only.
 ///
 /// # Errors
 ///
@@ -107,13 +128,26 @@ pub fn sys_send_to_kernel(
 /// waiting forever for a message that cannot arrive.
 ///
 /// This call can only fail in closed receive mode, which is one of the reasons
-/// why open receives are easier using [`sys_recv_open`].
+/// why open receives are easier using [`sys_recv_open`] and kin.
 pub fn sys_recv(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
     from: Option<TaskId>,
 ) -> Result<MessageOrNotification<'_>, TaskDeath> {
     let _ = (incoming, notification_mask, from);
+    unimplemented!()
+}
+
+/// Convenience wrapper for `sys_recv` for the case where you know, statically,
+/// that you don't care about notifications.
+///
+/// This is logically equivalent to `sys_recv(incoming, 0,
+/// from)`, but without making you deal with the `Notification` case.
+pub fn sys_recv_msg(
+    incoming: &mut [MaybeUninit<u8>],
+    from: Option<TaskId>,
+) -> Result<Message<'_>, TaskDeath> {
+    let _ = (incoming, from);
     unimplemented!()
 }
 
@@ -127,6 +161,19 @@ pub fn sys_recv_open(
     notification_mask: u32,
 ) -> MessageOrNotification<'_> {
     let _ = (incoming, notification_mask);
+    unimplemented!()
+}
+
+/// Convenience wrapper for `sys_recv` for the case where you know, statically,
+/// that any sender is fine and you're not interested in notifications.
+///
+/// This is logically equivalent to `sys_recv(incoming, 0, None)`, but without
+/// the code for handling errors in closed receive, and without making you deal
+/// with the `Notification` return case.
+pub fn sys_recv_msg_open(
+    incoming: &mut [MaybeUninit<u8>],
+) -> Message<'_> {
+    let _ = incoming;
     unimplemented!()
 }
 

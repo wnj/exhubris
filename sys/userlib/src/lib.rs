@@ -29,7 +29,9 @@
 //! - [`sys_post`]
 //! - [`sys_panic`]
 //! - [`sys_recv`]
+//!   - Variant: [`sys_recv_msg`]
 //!   - Variant: [`sys_recv_open`]
+//!   - Variant: [`sys_recv_msg_open`]
 //!   - Variant: [`sys_recv_notification`]
 //! - [`sys_reply`]
 //! - [`sys_reply_fault`]
@@ -456,7 +458,13 @@ pub use self::arch::sys_send_to_kernel;
 pub use self::arch::sys_recv;
 
 #[doc(inline)]
+pub use self::arch::sys_recv_msg;
+
+#[doc(inline)]
 pub use self::arch::sys_recv_open;
+
+#[doc(inline)]
+pub use self::arch::sys_recv_msg_open;
 
 #[doc(inline)]
 pub use self::arch::sys_recv_notification;

@@ -1,3 +1,9 @@
+//! Support crate for code generated from Idyll files.
+//!
+//! This crate needs to be imported to compile generated Idyll code. It also
+//! provides some useful functions for Idyll-implemented servers, particularly
+//! [`dispatch`].
+
 #![no_std]
 
 use core::{marker::PhantomData, mem::MaybeUninit};
@@ -38,23 +44,9 @@ pub fn dispatch<S, O>(server: &mut S, buffer: &mut [MaybeUninit<u8>])
     where for<'a> (PhantomData<O>, &'a mut S): Server<O>,
           O: ServerOp,
 {
-    let rm = userlib::sys_recv_open(buffer, 0);
-    match rm {
-        MessageOrNotification::Message(m) => {
-            if let Err(e) = dispatch_inner(server, &m) {
-                userlib::sys_reply_fault(m.sender, e);
-            }
-        }
-        MessageOrNotification::Notification(_) => {
-            // This statically can't happen, because we passed a zero
-            // notification mask. But the compiler can't see that. So if we were
-            // to `unreachable!()` we'd get a panic site, and that sucks.
-            //
-            // Instead, just return.
-            //
-            // TODO: this could benefit from a `sys_recv` wrapper that has a
-            // statically-zero notification mask.
-        }
+    let rm = userlib::sys_recv_msg_open(buffer);
+    if let Err(e) = dispatch_inner(server, &rm) {
+        userlib::sys_reply_fault(rm.sender, e);
     }
 }
 
@@ -335,10 +327,14 @@ impl<A, T> Leased<A, T>
 #[derive(Copy, Clone, Debug)]
 pub struct LenderError;
 
+/// Trait implemented by error types that are able to indicate task death, in
+/// addition to any application-defined error conditions.
 pub trait FromTaskDeath {
     fn from_task_death(_: TaskDeath) -> Self;
 }
 
+/// It simplifies some parts of the code generator if we can pun an error for
+/// the equivalent `Result`.
 impl<T, E: FromTaskDeath> FromTaskDeath for Result<T, E> {
     fn from_task_death(d: TaskDeath) -> Self {
         Err(E::from_task_death(d))

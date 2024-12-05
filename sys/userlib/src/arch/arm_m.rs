@@ -200,6 +200,49 @@ pub fn sys_recv(
 }
 
 #[inline(always)]
+pub fn sys_recv_msg(
+    incoming: &mut [MaybeUninit<u8>],
+    from: Option<TaskId>,
+) -> Result<Message<'_>, TaskDeath> {
+    let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
+    let retval = unsafe {
+        sys_recv_stub(
+            incoming.as_mut_ptr().cast(),
+            incoming.len(),
+            0,
+            from.map(|tid| 0x8000_0000 | u32::from(tid.0)).unwrap_or(0),
+            out.as_mut_ptr(),
+        )
+    };
+
+    // Safety: our asm stub is responsible for fully initializing this struct
+    // whether we succeed or fail.
+    let retval = ResponseCode(retval);
+    if let Ok(e) = TaskDeath::try_from(retval) {
+        return Err(e);
+    }
+    let rm = unsafe { out.assume_init() };
+    // We don't need to check the sender, we set the notification mask to 0.
+    let data = if rm.sent_length <= incoming.len() {
+        unsafe {
+            Ok(core::slice::from_raw_parts_mut(
+                    incoming.as_mut_ptr().cast(),
+                    rm.sent_length,
+            ))
+        }
+    } else {
+        Err(Truncated)
+    };
+    Ok(Message {
+        sender: TaskId(rm.sender as u16),
+        operation: rm.operation_or_notification as u16,
+        data,
+        reply_capacity: rm.reply_capacity,
+        lease_count: rm.lease_count,
+    })
+}
+
+#[inline(always)]
 pub fn sys_recv_open(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
@@ -238,6 +281,44 @@ pub fn sys_recv_open(
             reply_capacity: rm.reply_capacity,
             lease_count: rm.lease_count,
         })
+    }
+}
+
+#[inline(always)]
+pub fn sys_recv_msg_open(
+    incoming: &mut [MaybeUninit<u8>],
+) -> Message<'_> {
+    let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
+    unsafe {
+        sys_recv_stub(
+            incoming.as_mut_ptr().cast(),
+            incoming.len(),
+            0, // notification mask
+            0, // specific sender
+            out.as_mut_ptr(),
+        );
+    }
+
+    // Safety: our asm stub is responsible for fully initializing this struct
+    // whether we succeed or fail.
+    let rm = unsafe { out.assume_init() };
+    // We don't need to check the sender, we set notification mask to 0.
+    let data = if rm.sent_length <= incoming.len() {
+        unsafe {
+            Ok(core::slice::from_raw_parts_mut(
+                    incoming.as_mut_ptr().cast(),
+                    rm.sent_length,
+            ))
+        }
+    } else {
+        Err(Truncated)
+    };
+    Message {
+        sender: TaskId(rm.sender as u16),
+        operation: rm.operation_or_notification as u16,
+        data,
+        reply_capacity: rm.reply_capacity,
+        lease_count: rm.lease_count,
     }
 }
 
