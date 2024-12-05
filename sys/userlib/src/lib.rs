@@ -331,15 +331,19 @@ impl TryFrom<ResponseCode> for TaskDeath {
     }
 }
 
+pub enum MessageOrNotification<'a> {
+    Message(Message<'a>),
+    Notification(u32),
+}
+
 /// Information about a received message.
 #[derive(Debug)]
-pub struct RecvMessage<'a> {
-    /// The ID of the task that sent this message, or the special value
-    /// [`TaskId::KERNEL`] for synthetic messages from the kernel.
+pub struct Message<'a> {
+    /// The ID of the task that sent this message. This will not be
+    /// [`TaskId::KERNEL`] unless you fabricate it yourself.
     pub sender: TaskId,
-    /// The operation code the sender requests, or (for messages from the
-    /// kernel) the set of notification bits that triggered.
-    pub operation_or_notification: u32,
+    /// The operation code the sender requests.
+    pub operation: u16,
     /// A reference to the subset of the buffer passed to `sys_recv` that
     /// contains the sender's message, if it fit in the buffer. If the sender's
     /// message was too long, this is `Err(Truncated)` instead.
@@ -352,7 +356,7 @@ pub struct RecvMessage<'a> {
     pub lease_count: usize,
 }
 
-/// Error type used with `RecvMessage` to indicate that a message wouldn't fit
+/// Error type used with [`Message`] to indicate that a message wouldn't fit
 /// in our buffer.
 #[derive(Copy, Clone, Debug)]
 pub struct Truncated;

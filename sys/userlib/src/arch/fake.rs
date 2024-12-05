@@ -5,7 +5,7 @@
 //! 1. To provide architecture-neutral syscall docs for `cargo doc`.
 //! 2. To make `userlib` compile on other platforms for `rust-analyzer`.
 
-use crate::{Lease, RecvMessage, ResponseCode, TaskDeath, TaskId, TimerSettings, ReplyFaultReason};
+use crate::{Lease, MessageOrNotification, Message, ResponseCode, TaskDeath, TaskId, TimerSettings, ReplyFaultReason};
 use core::mem::MaybeUninit;
 
 pub(crate) fn idle() {
@@ -81,18 +81,18 @@ pub fn sys_send_to_kernel(
 ///
 /// This finds a task waiting to send a message to the current task. The
 /// caller's message is copied into `incoming`, and metadata about the message
-/// is returned in a [`RecvMessage`].
+/// is returned in a [`Message`] (wrapped in a [`MessageOrNotification`].
 ///
 /// If `notification_mask` is not zero, and the current task has any pending
-/// notifications, those notifications will be returned _in place of_ a message.
-/// This can be detected by checking the [`RecvMessage::sender`] field for
-/// [`TaskId::KERNEL`].
+/// notifications, those notifications will be returned instead, using
+/// [`MessageOrNotification::Notification`].
 ///
 /// The `from` argument controls open vs closed receive. If `from` is `None`,
 /// messages from any caller are accepted in priority order, so the returned
 /// message will be the one from the highest-priority waiting task. If `from` is
-/// `Some(t)`, only messages from `t` will be accepted. (If `t` is
-/// `TaskId::KERNEL`, only notifications are accepted.)
+/// `Some(t)`, only messages from `t` will be accepted. Notifications that pass
+/// the `notification_mask` are always accepted. (If `t` is `TaskId::KERNEL`,
+/// *only* notifications are accepted.)
 ///
 /// Use this form of `sys_recv` when the decision about whether to perform open
 /// or closed receive happens dynamically, at runtime. Otherwise, it's more
@@ -112,7 +112,7 @@ pub fn sys_recv(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
     from: Option<TaskId>,
-) -> Result<RecvMessage<'_>, TaskDeath> {
+) -> Result<MessageOrNotification<'_>, TaskDeath> {
     let _ = (incoming, notification_mask, from);
     unimplemented!()
 }
@@ -125,7 +125,7 @@ pub fn sys_recv(
 pub fn sys_recv_open(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
-) -> RecvMessage<'_> {
+) -> MessageOrNotification<'_> {
     let _ = (incoming, notification_mask);
     unimplemented!()
 }
@@ -254,10 +254,10 @@ pub fn sys_enable_irq(notification_mask: u32) {
 ///
 /// # Panics
 ///
-/// The server is expected to use the information provided in [`RecvMessage`]
-/// and produced by [`sys_borrow_info`] to guide its access to leases. As a
-/// result, attempting to access an invalid `index`, or attempting to read from
-/// a write-only lease, are both treated as errors _in the server_ and trigger
+/// The server is expected to use the information provided in [`Message`] and
+/// produced by [`sys_borrow_info`] to guide its access to leases. As a result,
+/// attempting to access an invalid `index`, or attempting to read from a
+/// write-only lease, are both treated as errors _in the server_ and trigger
 /// faults.
 pub fn sys_borrow_read(
     lender: TaskId,
@@ -288,9 +288,9 @@ pub fn sys_borrow_read(
 ///
 /// # Panics
 ///
-/// The server is expected to use the information provided in [`RecvMessage`]
-/// and produced by [`sys_borrow_info`] to guide its access to leases. As a
-/// result, attempting to access an invalid `index`, or attempting to write to a
+/// The server is expected to use the information provided in [`Message`] and
+/// produced by [`sys_borrow_info`] to guide its access to leases. As a result,
+/// attempting to access an invalid `index`, or attempting to write to a
 /// read-only lease, are both treated as errors _in the server_ and trigger
 /// faults.
 pub fn sys_borrow_write(
@@ -315,7 +315,7 @@ pub fn sys_borrow_write(
 ///
 /// # Panics
 ///
-/// The correct number of leases is provided to the server in [`RecvMessage`].
+/// The correct number of leases is provided to the server in [`Message`].
 /// Attempting to access an `index` outside of that range is treated as an error
 /// in the server, and induces a fault.
 pub fn sys_borrow_info(

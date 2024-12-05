@@ -1,6 +1,6 @@
 use core::arch::global_asm;
 use core::mem::MaybeUninit;
-use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, RecvMessage, TimerSettings, ReplyFaultReason, LeaseAttributes};
+use crate::{Lease, AbiLease, TaskId, Sysnum, TaskDeath, Truncated, ResponseCode, Message, MessageOrNotification, TimerSettings, ReplyFaultReason, LeaseAttributes};
 
 extern "Rust" {
     /// Unresolved symbol for the application main function.
@@ -139,8 +139,7 @@ sys_send_stub:
     sysnum = const Sysnum::Send as u32,
 );
 
-/// A version of `RecvMessage` that is shaped exactly like the return registers
-/// after a call to `recv`.
+/// The actual return register layout after a call to `recv`.
 ///
 /// This lets us blit the return registers directly into this struct from the
 /// assembly stub without having to think too much.
@@ -158,7 +157,7 @@ pub fn sys_recv(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
     from: Option<TaskId>,
-) -> Result<RecvMessage<'_>, TaskDeath> {
+) -> Result<MessageOrNotification<'_>, TaskDeath> {
     let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
     let retval = unsafe {
         sys_recv_stub(
@@ -174,9 +173,12 @@ pub fn sys_recv(
     // whether we succeed or fail.
     let retval = ResponseCode(retval);
     if let Ok(e) = TaskDeath::try_from(retval) {
-        Err(e)
+        return Err(e);
+    }
+    let rm = unsafe { out.assume_init() };
+    if rm.sender as u16 == u16::from(TaskId::KERNEL) {
+        Ok(MessageOrNotification::Notification(rm.operation_or_notification))
     } else {
-        let rm = unsafe { out.assume_init() };
         let data = if rm.sent_length <= incoming.len() {
             unsafe {
                 Ok(core::slice::from_raw_parts_mut(
@@ -187,13 +189,13 @@ pub fn sys_recv(
         } else {
             Err(Truncated)
         };
-        Ok(RecvMessage {
+        Ok(MessageOrNotification::Message(Message {
             sender: TaskId(rm.sender as u16),
-            operation_or_notification: rm.operation_or_notification,
+            operation: rm.operation_or_notification as u16,
             data,
             reply_capacity: rm.reply_capacity,
             lease_count: rm.lease_count,
-        })
+        }))
     }
 }
 
@@ -201,7 +203,7 @@ pub fn sys_recv(
 pub fn sys_recv_open(
     incoming: &mut [MaybeUninit<u8>],
     notification_mask: u32,
-) -> RecvMessage<'_> {
+) -> MessageOrNotification<'_> {
     let mut out = MaybeUninit::<AbiRecvMessage>::uninit();
     unsafe {
         sys_recv_stub(
@@ -216,22 +218,26 @@ pub fn sys_recv_open(
     // Safety: our asm stub is responsible for fully initializing this struct
     // whether we succeed or fail.
     let rm = unsafe { out.assume_init() };
-    let data = if rm.sent_length <= incoming.len() {
-        unsafe {
-            Ok(core::slice::from_raw_parts_mut(
-                incoming.as_mut_ptr().cast(),
-                rm.sent_length,
-            ))
-        }
+    if rm.sender as u16 == u16::from(TaskId::KERNEL) {
+        MessageOrNotification::Notification(rm.operation_or_notification)
     } else {
-        Err(Truncated)
-    };
-    RecvMessage {
-        sender: TaskId(rm.sender as u16),
-        operation_or_notification: rm.operation_or_notification,
-        data,
-        reply_capacity: rm.reply_capacity,
-        lease_count: rm.lease_count,
+        let data = if rm.sent_length <= incoming.len() {
+            unsafe {
+                Ok(core::slice::from_raw_parts_mut(
+                        incoming.as_mut_ptr().cast(),
+                        rm.sent_length,
+                ))
+            }
+        } else {
+            Err(Truncated)
+        };
+        MessageOrNotification::Message(Message {
+            sender: TaskId(rm.sender as u16),
+            operation: rm.operation_or_notification as u16,
+            data,
+            reply_capacity: rm.reply_capacity,
+            lease_count: rm.lease_count,
+        })
     }
 }
 

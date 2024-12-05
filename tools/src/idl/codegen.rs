@@ -54,7 +54,7 @@ pub fn generate_server(
         impl<'a, T> idyll_runtime::Server<#op_enum_name> for (core::marker::PhantomData<#op_enum_name>, &'a mut T)
             where T: #trait_name
         {
-            fn dispatch_op(&mut self, op: #op_enum_name, msg: &RecvMessage<'_>) -> Result<(), ReplyFaultReason> {
+            fn dispatch_op(&mut self, op: #op_enum_name, msg: &Message<'_>) -> Result<(), ReplyFaultReason> {
                 let Ok(msg_data) = &msg.data else {
                     return Err(ReplyFaultReason::BadMessageSize);
                 };
@@ -391,7 +391,7 @@ pub fn generate_server_trait_method(
     let name = format_ident!("{name}");
     Ok(quote! {
         #doc
-        fn #name(&mut self, full_msg: &userlib::RecvMessage<'_>, #(#args,)*)
+        fn #name(&mut self, full_msg: &userlib::Message<'_>, #(#args,)*)
             -> #return_type;
     })
 }

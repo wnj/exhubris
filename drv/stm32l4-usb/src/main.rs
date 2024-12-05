@@ -13,7 +13,7 @@ use hid::{HidClassDescriptorType, HidRequestCode};
 use idyll_runtime::{Leased, Read};
 use num_traits::FromPrimitive as _;
 use protocol::{Dir, Recipient, RequestTypeType, StdRequestCode};
-use userlib::{RecvMessage, ReplyFaultReason, TaskId};
+use userlib::{Message, ReplyFaultReason, TaskId};
 use drv_stm32l4_sys_api::{Stm32L4Sys, Port, Function};
 use stm32_metapac::usb::vals::{EpType, Stat};
 
@@ -457,7 +457,7 @@ impl idyll_runtime::NotificationHandler for Server {
 impl UsbHid for Server {
     fn enqueue_report(
         &mut self,
-        _full_msg: &RecvMessage<'_>,
+        _full_msg: &Message<'_>,
         endpoint: u8,
         data: Leased<Read, u8>,
     ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
