@@ -5,7 +5,7 @@
 
 use core::mem::MaybeUninit;
 
-use stm32_metapac::gpio::vals::{Moder, Odr};
+use stm32_metapac::gpio::vals::{Idr, Moder, Odr, Pupdr};
 use userlib::{Message, ReplyFaultReason};
 
 #[export_name = "main"]
@@ -72,6 +72,31 @@ impl Stm32L4Sys for Server {
         gpio.afr(if pin < 8 { 0 } else { 1 }).modify(|r| r.set_afr(pin & 0b111, af));
         gpio.moder().modify(|v| v.set_moder(pin, Moder::ALTERNATE));
 
+        Ok(())
+    }
+
+    fn set_pin_input(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+        let gpio = get_port(port);
+        gpio.moder().modify(|v| v.set_moder(convert_pin(pin), Moder::INPUT));
+        Ok(())
+    }
+
+    fn is_pin_high(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<bool,idyll_runtime::ReplyFaultReason> {
+        let gpio = get_port(port);
+        let idr = gpio.idr().read();
+        Ok(idr.idr(usize::from(pin & 0xF)) == Idr::HIGH)
+    }
+
+    fn set_pin_pull(&mut self, _: &Message<'_>, port:Port, pin:u8, pull: Option<Pull>) -> Result<(),idyll_runtime::ReplyFaultReason> {
+        let gpio = get_port(port);
+        gpio.pupdr().modify(|v| {
+            v.set_pupdr(convert_pin(pin), match pull {
+                Some(Pull::Up) => Pupdr::PULLUP,
+                Some(Pull::Down) => Pupdr::PULLDOWN,
+                None => Pupdr::FLOATING,
+            });
+        });
+        gpio.moder().modify(|v| v.set_moder(convert_pin(pin), Moder::INPUT));
         Ok(())
     }
 

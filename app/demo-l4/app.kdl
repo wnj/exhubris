@@ -52,6 +52,7 @@ task "keyboard" {
     stack-size 512
     priority 3
     uses-task "usbhid"
+    uses-task "sys"
     notification "report_needed"
     notification "timer"
 }

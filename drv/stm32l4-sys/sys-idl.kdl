@@ -37,6 +37,13 @@ enum "Function" {
     case "AF15"
 }
 
+enum "Pull" {
+    doc "Possible settings for pin pull resistors."
+
+    case "Up"
+    case "Down"
+}
+
 // Operations:
 
 method "set_pin_output" {
@@ -86,6 +93,35 @@ method "set_pin_alternate_mode" {
     arg "port" "Port"
     arg "pin" "u8"
     arg "function" "Function"
+    auto-retry
+}
+
+method "set_pin_input" {
+    doc "Configures a pin into input mode."
+
+    operation 6
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "is_pin_high" {
+    doc "Senses the current level of a pin."
+
+    operation 7
+    arg "port" "Port"
+    arg "pin" "u8"
+    result "bool"
+    auto-retry
+}
+
+method "set_pin_pull" {
+    doc "Configures pull resistors on a pin."
+
+    operation 8
+    arg "port" "Port"
+    arg "pin" "u8"
+    arg "pull" "Option<Pull>"
     auto-retry
 }
 
