@@ -143,7 +143,7 @@ pub fn generate_client_method(
 
     let return_type = def.result.as_ref().map(|t| generate_type(t.value()))
         .unwrap_or_else(|| Ok(quote! { () }))?;
-    let operation = def.operation;
+    let operation = *def.operation.value();
     let syscall = if def.auto_retry {
         // We'll use the userlib-provided common routine for this, to save
         // space. This means we can only produce user errors, and the user error
@@ -401,14 +401,14 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
     let enumname = format_ident!("{enumname}");
     let cases = iface.methods.iter().map(|(name, def)| {
         let discrim = format_ident!("{}", name.to_case(Case::Pascal));
-        let op = def.operation;
+        let op = *def.operation.value();
         quote! {
             #discrim = #op,
         }
     }).collect::<Vec<_>>();
     let match_cases = iface.methods.iter().map(|(name, def)| {
         let discrim = format_ident!("{}", name.to_case(Case::Pascal));
-        let op = def.operation;
+        let op = *def.operation.value();
         quote! {
             #op => Ok(#enumname::#discrim),
         }

@@ -1,6 +1,6 @@
 pub mod codegen;
 
-use std::{path::Path, sync::Arc};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use indexmap::IndexMap;
 use kdl::{KdlDocument, KdlNode};
@@ -61,6 +61,23 @@ fn parse_interface_internal(
         def.methods.insert(name, m);
     }
 
+    let mut used_operation_numbers = BTreeMap::new();
+    for method in def.methods.values() {
+        let o = *method.operation.value();
+        if used_operation_numbers.contains_key(&o) {
+            bail!(
+                labels = [
+                    LabeledSpan::at(used_operation_numbers[&o], "used here"),
+                    LabeledSpan::at(method.operation.span(), "also used here"),
+                ],
+                "interface {} contains more than one method with \
+                    operation number {o}",
+                    def.name.value()
+            );
+        }
+        used_operation_numbers.insert(o, method.operation.span());
+    }
+
     Ok(def)
 }
 
@@ -113,11 +130,13 @@ fn parse_method(
     let docstr = get_unique_optional_string_value(doc, "doc")?;
 
     let operation = get_unique_i64_value(doc, "operation")?;
-    let operation = u16::try_from(*operation.value()).map_err(|_| {
-        miette!(
-            labels=[LabeledSpan::at(operation.span(), "out of range")],
-            "operation must fit in a 16-bit unsigned integer"
-        )
+    let operation = operation.try_map_with_span(|i, span| {
+        u16::try_from(i).map_err(|_| {
+            miette!(
+                labels=[LabeledSpan::at(span, "out of range")],
+                "operation must fit in a 16-bit unsigned integer"
+            )
+        })
     })?;
 
     let args = get_uniquely_named_children(doc, "arg")?
@@ -274,10 +293,10 @@ pub struct InterfaceDef {
     pub types: IndexMap<String, TypeDef>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct MethodDef {
     pub doc: Option<Spanned<String>>,
-    pub operation: u16,
+    pub operation: Spanned<u16>,
     pub args: IndexMap<String, ArgDef>,
     pub leases: IndexMap<String, LeaseDef>,
     pub result: Option<Spanned<ValueType>>,
