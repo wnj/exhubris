@@ -35,6 +35,8 @@ enum "EnqueueError" {
 enum "UsbEvent" {
     case "Reset"
     case "Configured"
-    case "ReportDescriptorNeeded"
+    case "ReportDescriptorNeeded" {
+        field "length" "u16"
+    }
     case "ReportNeeded"
 }

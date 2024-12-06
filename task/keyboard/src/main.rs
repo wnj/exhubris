@@ -142,10 +142,11 @@ fn main() -> ! {
                         // We're not really tracking protocol state yet, so,
                         // nothing to do here.
                     }
-                    UsbEvent::ReportDescriptorNeeded => {
+                    UsbEvent::ReportDescriptorNeeded { length } => {
                         // In this case, we do not deliver a report on EP1.
                         // Instead, we're going to deposit a descriptor on EP0.
-                        usb.enqueue_report(0, &BOOT_KBD_DESC).ok();
+                        let n = BOOT_KBD_DESC.len().min(usize::from(length));
+                        usb.enqueue_report(0, &BOOT_KBD_DESC[..n]).ok();
                     }
                     UsbEvent::Configured => {
                         // When we get configured, we want to prepare an initial

@@ -457,9 +457,9 @@ impl Server {
                     Some(HidClassDescriptorType::Report) => {
                         emit(Event::HidDescriptor);
                         // HID Report Descriptor
-                        self.poke_keyboard_task(UsbEvent::ReportDescriptorNeeded);
-                        // TODO: technically we should be conveying the
-                        // requested length to the keyboard task.
+                        self.poke_keyboard_task(UsbEvent::ReportDescriptorNeeded {
+                            length: setup.length.get(),
+                        });
                     }
                     _ => {
                         // Unknown kind of descriptor.

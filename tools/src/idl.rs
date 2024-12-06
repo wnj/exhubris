@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use kdl::{KdlDocument, KdlNode};
 use miette::{bail, miette, LabeledSpan, NamedSource, IntoDiagnostic as _, Context};
 
-use crate::appcfg::{add_source, get_unique_bool, get_unique_i64_value, get_unique_optional_string_value, get_unique_string_value, get_uniquely_named_children, no_children, required_children, Spanned};
+use crate::appcfg::{add_source, get_children_named, get_unique_bool, get_unique_i64_value, get_unique_optional_string_value, get_unique_string_value, get_uniquely_named_children, no_children, required_children, Spanned};
 
 pub fn load_interface(
     path: impl AsRef<Path>,
@@ -87,8 +87,6 @@ fn parse_enum(
 
     let mut def = EnumDef::default();
     for (name, node) in get_uniquely_named_children(doc, "case")? {
-        no_children(node)?;
-
         let mut case = EnumCaseDef::default();
 
         if node.entries().len() == 1 {
@@ -108,6 +106,64 @@ fn parse_enum(
                 "too many arguments for enum case"
             )
         }
+
+        if let Some(children) = node.children() {
+            case.doc = get_unique_optional_string_value(children, "doc")?;
+
+            let is_tuple = get_unique_optional_string_value(children, "struct-style")?
+                .map(|s| s.value() == "tuple")
+                .unwrap_or(false);
+
+            
+            if is_tuple {
+                // Tuple fields don't have names.
+                let mut types = vec![];
+                for field in get_children_named(children, "field")? {
+                    if field.entries().len() == 1 && field.entries()[0].name().is_none() {
+                        let e = &field.entries()[0];
+                        if let Some(s) = e.value().as_string() {
+                            types.push(parse_value_type(s)?);
+                        } else {
+                            bail!(
+                                labels=[LabeledSpan::at(*e.span(), "not a string")],
+                                "tuple field should have a string (type) argument"
+                            );
+                        }
+                    } else {
+                        bail!(
+                            labels=[LabeledSpan::at(*field.span(), "not one argument")],
+                            "wrong number of arguments for field in tuple struct"
+                        );
+                    }
+                }
+                case.body = Some(EnumBodyDef::Tuple(types));
+            } else {
+                // Expect field names.
+                let mut fields = IndexMap::new();
+                for (name, node) in get_uniquely_named_children(children, "field")? {
+                    if node.entries().len() != 2 {
+                        bail!(
+                            labels=[LabeledSpan::at(*node.span(), "not two arguments")],
+                            "wrong number of arguments for field in named struct"
+                        );
+                    }
+                    let e_type = &node.entries()[1];
+                    if let Some(s) = e_type.value().as_string() {
+                        fields.insert(name, FieldDef {
+                            type_: parse_value_type(s)?,
+                        });
+                    } else {
+                        bail!(
+                            labels=[LabeledSpan::at(*e_type.span(), "not a string")],
+                            "struct field should have a string (type) argument"
+                        );
+                    }
+
+                }
+                case.body = Some(EnumBodyDef::Struct(fields));
+            }
+        }
+
         def.cases.insert(name, case);
     }
 
@@ -317,6 +373,7 @@ pub struct EnumDef {
 
 #[derive(Clone, Debug, Default)]
 pub struct EnumCaseDef {
+    pub doc: Option<Spanned<String>>,
     pub integer_value: Option<i64>,
     pub body: Option<EnumBodyDef>,
 }

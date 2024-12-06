@@ -1024,13 +1024,19 @@ fn get_unique_child<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<&'d 
         })
 }
 
-pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<IndexMap<String, &'d KdlNode>> {
+pub(crate) fn get_children_named<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<Vec<&'d KdlNode>> {
     let mut found = vec![];
     for node in doc.nodes() {
         if node.name().value() == name {
             found.push(node);
         }
     }
+
+    Ok(found)
+}
+
+pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<IndexMap<String, &'d KdlNode>> {
+    let found = get_children_named(doc, name)?;
 
     let mut by_name = IndexMap::new();
     for node in found {

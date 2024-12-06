@@ -272,7 +272,7 @@ pub fn generate_enum(
     Ok(quote! {
         #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize)]
         pub enum #name {
-            #(#cases)*
+            #(#cases,)*
         }
         #from_impl
     })
@@ -290,7 +290,7 @@ pub fn generate_enum_case(
     let body = enum_case_def.body.as_ref().map(generate_enum_body)
         .transpose()?;
     Ok(quote::quote! {
-        #name #body #discriminant,
+        #name #body #discriminant
     })
 }
 
