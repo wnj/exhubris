@@ -181,8 +181,8 @@ pub fn sys_recv(
     } else {
         let data = if rm.sent_length <= incoming.len() {
             unsafe {
-                Ok(core::slice::from_raw_parts_mut(
-                        incoming.as_mut_ptr().cast(),
+                Ok(core::slice::from_raw_parts(
+                        incoming.as_ptr().cast(),
                         rm.sent_length,
                 ))
             }
@@ -225,8 +225,8 @@ pub fn sys_recv_msg(
     // We don't need to check the sender, we set the notification mask to 0.
     let data = if rm.sent_length <= incoming.len() {
         unsafe {
-            Ok(core::slice::from_raw_parts_mut(
-                    incoming.as_mut_ptr().cast(),
+            Ok(core::slice::from_raw_parts(
+                    incoming.as_ptr().cast(),
                     rm.sent_length,
             ))
         }
@@ -266,8 +266,8 @@ pub fn sys_recv_open(
     } else {
         let data = if rm.sent_length <= incoming.len() {
             unsafe {
-                Ok(core::slice::from_raw_parts_mut(
-                        incoming.as_mut_ptr().cast(),
+                Ok(core::slice::from_raw_parts(
+                        incoming.as_ptr().cast(),
                         rm.sent_length,
                 ))
             }
@@ -305,8 +305,8 @@ pub fn sys_recv_msg_open(
     // We don't need to check the sender, we set notification mask to 0.
     let data = if rm.sent_length <= incoming.len() {
         unsafe {
-            Ok(core::slice::from_raw_parts_mut(
-                    incoming.as_mut_ptr().cast(),
+            Ok(core::slice::from_raw_parts(
+                    incoming.as_ptr().cast(),
                     rm.sent_length,
             ))
         }

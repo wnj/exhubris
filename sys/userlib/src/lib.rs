@@ -349,7 +349,7 @@ pub struct Message<'a> {
     /// A reference to the subset of the buffer passed to `sys_recv` that
     /// contains the sender's message, if it fit in the buffer. If the sender's
     /// message was too long, this is `Err(Truncated)` instead.
-    pub data: Result<&'a mut [u8], Truncated>,
+    pub data: Result<&'a [u8], Truncated>,
     /// The number of bytes the sender has alloted to receive our response.
     pub reply_capacity: usize,
     /// The number of leases the sender has furnished. (Note that this tells us
