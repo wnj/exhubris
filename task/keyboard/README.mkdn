@@ -1,5 +1,5 @@
-# Basic IPC generator
+# HID keyboard engine
 
-This task spams a counterpart, `pong`, with IPC messages. This is intended to
-demonstrate that the IPC facilities work, and shouldn't be included in a real
-application.
+This task cooperates with `stm32l4-usb` to implement a basic HID keyboard.
+
+See the docs in `src/main.rs`.

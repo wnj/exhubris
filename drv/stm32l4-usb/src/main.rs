@@ -1,3 +1,27 @@
+//! Basic USB device driver, somewhat specialized for HID right now.
+//!
+//! # Operation
+//!
+//! We configure the USB hardware to generate interrupts and then chill.
+//!
+//! As interrupts arrive, we handle the high-level USB protocol state machine,
+//! which includes:
+//!
+//! - Device reset.
+//! - Delivering device, configuration, and string descriptors on demand.
+//! - Processing the `SET_CONFIGURATION` operation and a handful of basic HID
+//!   operations (like `SET_IDLE`).
+//!
+//! For most other operations, we defer to a partner task, the keyboard task.
+//! The keyboard task is responsible for
+//!
+//! - Producing the HID report descriptor on demand.
+//! - Producing HID reports, as described by that descriptor.
+//!
+//! When we need the keyboard task to do something, we poke it by posting a
+//! (configurable) notification. It then calls back through our IPC interface to
+//! make things happen. See the keyboard task docs for an elaborate explanation.
+
 #![no_std]
 #![no_main]
 
@@ -7,7 +31,7 @@ mod hid;
 
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicU8};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use hid::{HidClassDescriptorType, HidRequestCode};
 use idyll_runtime::{Leased, Read};
@@ -19,7 +43,11 @@ use stm32_metapac::usb::vals::{EpType, Stat};
 
 #[export_name = "main"]
 fn main() -> ! {
+    // Make an IPC client for the SYS task.
     let sys = Stm32L4Sys::from(hubris_task_slots::SLOTS.sys);
+
+    // STM32L4 USB device setup:
+
     // Turn on clock to USBFS.
     sys.enable_clock(drv_stm32l4_sys_api::PeripheralName::UsbFs);
     // Also turn on the Clock Recovery System that we use to trim the 48MHz
@@ -65,6 +93,8 @@ fn main() -> ! {
     // Setup endpoint buffers
     usbsram::fill_buffer_descriptor_table(&usb);
 
+    // Create our server type, which will handle interrupts and IPC messages
+    // going forward.
     let mut server = Server {
         usb,
         pending_address: None,
@@ -73,11 +103,17 @@ fn main() -> ! {
         expected_out: None,
         queued_event: None,
     };
+    // Enable our IRQ.
     userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
 
+    // Message/notification processing loop:
     let mut incoming = [MaybeUninit::uninit(); USB_HID_BUFFER_SIZE];
     loop {
-        idyll_runtime::dispatch_or_event(&mut server, hubris_notifications::USB_IRQ, &mut incoming);
+        idyll_runtime::dispatch_or_event(
+            &mut server,
+            hubris_notifications::USB_IRQ,
+            &mut incoming,
+        );
     }
 }
 
@@ -99,9 +135,128 @@ enum DeviceState {
     Configured,
 }
 
-#[no_mangle]
-static OUR_ADDRESS: AtomicU8 = AtomicU8::new(0);
+// Our "IRQ handler" to respond to notifications.
+impl idyll_runtime::NotificationHandler for Server {
+    fn handle_notification(&mut self, bits: u32) {
+        if bits & hubris_notifications::USB_IRQ != 0 {
+            let istr = self.usb.istr().read();
 
+            // Detect and handle link reset.
+            if istr.reset() {
+                emit(Event::Reset);
+                self.device_reset();
+                userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
+                return;
+            }
+
+            // Respond to start-of-frame every 1ms
+            // Note: currently we don't enable an interrupt on this, so it's
+            // kind of vestigial. Evaluate. TODO.
+            if istr.sof() {
+                self.usb.istr().write(|w| {
+                    w.0 = !0;
+                    w.set_sof(false);
+                });
+            }
+
+            // "Correct TRansmission" indicates that something got transferred one
+            // way or the other.
+            if istr.ctr() {
+                // CTR cannot be cleared by writing istr as we did above. We have to
+                // clear the root condition that's causing it.
+
+                // The ep_id register is 4 bits but we only implement 8 endpoints.
+                // Not sure why. Mask it.
+                let ep = usize::from(istr.ep_id() & 0x7);
+
+                let eprv = self.usb.epr(ep).read();
+
+                match istr.dir() {
+                    stm32_metapac::usb::vals::Dir::FROM => {
+                        // OUT or SETUP (transmission)
+                       
+                        self.usb.epr(ep).modify(|w| {
+                            leave_toggles_unchanged(w);
+                            w.set_ctr_rx(false);
+                        });
+
+                        if eprv.setup() {
+                            // SETUP
+                            self.on_setup(ep);
+                        } else {
+                            // OUT
+                            self.on_out(ep);
+                        }
+                    }
+                    stm32_metapac::usb::vals::Dir::TO => {
+                        // IN (reception)
+                        self.usb.epr(ep).modify(|w| {
+                            leave_toggles_unchanged(w);
+                            w.set_ctr_tx(false);
+                        });
+                        self.on_in(ep);
+                    }
+                }
+            }
+
+            userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
+        }
+    }
+}
+
+// Implementation of the idyll-generated trait for handling our IPC interface.
+impl UsbHid for Server {
+    fn enqueue_report(
+        &mut self,
+        _full_msg: &Message<'_>,
+        endpoint: u8,
+        data: Leased<Read, u8>,
+    ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
+        match endpoint {
+            0 | 1 => {
+                if data.len() > 0x40 {
+                    return Err(ReplyFaultReason::BadLeases);
+                }
+                // Amortize the syscall overhead a _little bit_ without having
+                // to burn 64 bytes of stack.
+                let mut xfer_buffer = [0; 8];
+                let mut sram_offset = usbsram::get_ep_tx_offset(endpoint as usize);
+                for i in (0..data.len()).step_by(8) {
+                    let chunk_end = usize::min(data.len(), i + 8);
+                    // Yes, LLVM should be able to see that this is < 8, but it
+                    // can't, so include this no-op min call to suppress a
+                    // bounds check panic below.
+                    let chunk_len = usize::min(chunk_end - i, 8);
+                    let chunk_buffer = &mut xfer_buffer[..chunk_len];
+                    if data.read_range(i, chunk_buffer).is_err() {
+                        // caller went away, choose an arbitrary reply fault
+                        // code -- it won't be delivered.
+                        return Err(ReplyFaultReason::UndefinedOperation);
+                    }
+                    usbsram::write_bytes(sram_offset, chunk_buffer);
+                    sram_offset += chunk_len;
+                }
+                usbsram::set_ep_tx_count(endpoint as usize, data.len() as u16);
+                self.configure_response(endpoint as usize, Stat::VALID, Stat::VALID);
+                emit(Event::HidReportReady);
+                Ok(Ok(true))
+            }
+            _ => {
+                // lol no
+                Err(ReplyFaultReason::BadMessageContents)
+            }
+        }
+    }
+
+    fn get_event(
+        &mut self,
+        _full_msg: &Message<'_>,
+    ) -> Result<Option<UsbEvent>, ReplyFaultReason> {
+        Ok(self.queued_event.take())
+    }
+}
+
+// Utility functions and factors of the above code.
 impl Server {
     fn device_reset(&mut self) {
         // Clear all interrupt flags.
@@ -136,7 +291,6 @@ impl Server {
             w.set_add(0);
             w.set_ef(true);
         });
-        OUR_ADDRESS.store(0, Ordering::Relaxed);
         self.pending_address = None;
         self.state = DeviceState::Default;
         self.queued_event = Some(UsbEvent::Reset);
@@ -218,7 +372,6 @@ impl Server {
                     w.set_add(addr);
                 });
                 emit(Event::Address(addr));
-                OUR_ADDRESS.store(addr, Ordering::Relaxed);
                 self.state = if addr == 0 {
                     // Well, we've been kicked back to default state in a weird
                     // manner, but, ok
@@ -379,9 +532,9 @@ impl Server {
     }
 }
 
-#[no_mangle]
-static IRQS: AtomicUsize = AtomicUsize::new(0);
-
+/// My least favorite property of this USB Device block: write-one-to-toggle
+/// fields in the endpoint register. This zeroes them so that they don't get
+/// changed in a read-modify-write.
 fn leave_toggles_unchanged(v: &mut stm32_metapac::usb::regs::Epr) {
     v.set_dtog_tx(false);
     v.set_dtog_rx(false);
@@ -389,129 +542,10 @@ fn leave_toggles_unchanged(v: &mut stm32_metapac::usb::regs::Epr) {
     v.set_stat_rx(Stat::from_bits(0));
 }
 
-impl idyll_runtime::NotificationHandler for Server {
-    fn handle_notification(&mut self, bits: u32) {
-        if bits & hubris_notifications::USB_IRQ != 0 {
-            IRQS.fetch_add(1, Ordering::Relaxed);
-
-            let istr = self.usb.istr().read();
-
-            // Detect and handle link reset.
-            if istr.reset() {
-                emit(Event::Reset);
-                self.device_reset();
-                userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
-                return;
-            }
-
-            // Respond to start-of-frame every 1ms
-            // Note: currently we don't enable an interrupt on this, so it's
-            // kind of vestigial. Evaluate. TODO.
-            if istr.sof() {
-                self.usb.istr().write(|w| {
-                    w.0 = !0;
-                    w.set_sof(false);
-                });
-            }
-
-            // "Correct TRansmission" indicates that something got transferred one
-            // way or the other.
-            if istr.ctr() {
-                // CTR cannot be cleared by writing istr as we did above. We have to
-                // clear the root condition that's causing it.
-
-                // The ep_id register is 4 bits but we only implement 8 endpoints.
-                // Not sure why. Mask it.
-                let ep = usize::from(istr.ep_id() & 0x7);
-
-                let eprv = self.usb.epr(ep).read();
-
-                match istr.dir() {
-                    stm32_metapac::usb::vals::Dir::FROM => {
-                        // OUT or SETUP (transmission)
-                       
-                        self.usb.epr(ep).modify(|w| {
-                            leave_toggles_unchanged(w);
-                            w.set_ctr_rx(false);
-                        });
-
-                        if eprv.setup() {
-                            // SETUP
-                            self.on_setup(ep);
-                        } else {
-                            // OUT
-                            self.on_out(ep);
-                        }
-                    }
-                    stm32_metapac::usb::vals::Dir::TO => {
-                        // IN (reception)
-                        self.usb.epr(ep).modify(|w| {
-                            leave_toggles_unchanged(w);
-                            w.set_ctr_tx(false);
-                        });
-                        self.on_in(ep);
-                    }
-                }
-            }
-
-            userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
-        }
-    }
-}
-
-impl UsbHid for Server {
-    fn enqueue_report(
-        &mut self,
-        _full_msg: &Message<'_>,
-        endpoint: u8,
-        data: Leased<Read, u8>,
-    ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
-        match endpoint {
-            0 | 1 => {
-                if data.len() > 0x40 {
-                    return Err(ReplyFaultReason::BadLeases);
-                }
-                // Amortize the syscall overhead a _little bit_ without having
-                // to burn 64 bytes of stack.
-                let mut xfer_buffer = [0; 8];
-                let mut sram_offset = usbsram::get_ep_tx_offset(endpoint as usize);
-                for i in (0..data.len()).step_by(8) {
-                    let chunk_end = usize::min(data.len(), i + 8);
-                    // Yes, LLVM should be able to see that this is < 8, but it
-                    // can't, so include this no-op min call to suppress a
-                    // bounds check panic below.
-                    let chunk_len = usize::min(chunk_end - i, 8);
-                    let chunk_buffer = &mut xfer_buffer[..chunk_len];
-                    if data.read_range(i, chunk_buffer).is_err() {
-                        // caller went away, choose an arbitrary reply fault
-                        // code -- it won't be delivered.
-                        return Err(ReplyFaultReason::UndefinedOperation);
-                    }
-                    usbsram::write_bytes(sram_offset, chunk_buffer);
-                    sram_offset += chunk_len;
-                }
-                usbsram::set_ep_tx_count(endpoint as usize, data.len() as u16);
-                self.configure_response(endpoint as usize, Stat::VALID, Stat::VALID);
-                emit(Event::HidReportReady);
-                Ok(Ok(true))
-            }
-            _ => {
-                // lol no
-                Err(ReplyFaultReason::BadMessageContents)
-            }
-        }
-    }
-
-    fn get_event(
-        &mut self,
-        _full_msg: &Message<'_>,
-    ) -> Result<Option<UsbEvent>, ReplyFaultReason> {
-        Ok(self.queued_event.take())
-    }
-}
-
 include!(concat!(env!("OUT_DIR"), "/generated_server.rs"));
 include!(concat!(env!("OUT_DIR"), "/usb_config.rs"));
+
+// Debugger visibility stuff follows:
 
 #[no_mangle]
 static mut EVENTS: [Event; 128] = [Event::Reset; 128];

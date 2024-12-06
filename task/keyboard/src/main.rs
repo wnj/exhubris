@@ -1,4 +1,91 @@
-//! Fake keyboard engine.
+//! Basic USB HID keyboard engine.
+//!
+//! This task manages key matrix scanning and report construction, driven by the
+//! OS timer and the USB task.
+//!
+//! # Operation
+//!
+//! This task runs a continuous event loop, driven by its OS timer, that sets
+//! one SCANOUT line high at a time, and then reads the state of all SCANIN
+//! lines. Because the keyboard in question is tiny (four keys) I'm just doing
+//! this in software at a relatively low polling rate (500 Hz). Key states are
+//! tracked in a basic array of `bool`s on the stack. I'm not debouncing at the
+//! moment because this is a proof of concept.
+//!
+//! The other events come from the USB task. The USB task doesn't interact with
+//! us until the host has set up and configured the USB device. At that point,
+//! we start receiving events that we need to respond to.
+//!
+//! The basic structure of any USB event is as follows:
+//!
+//! 1. The USB task posts our `EVENT_NEEDED` notification, finishes up whatever
+//!    it was doing, and goes to sleep.
+//! 2. We wake up and notice the notification. In response, we send a
+//!    `get_event` message to the USB task.
+//! 3. The USB task wakes up to receive the event and replies with a `UsbEvent`
+//!    describing the condition we need to handle. It then goes back to sleep.
+//! 4. We receive the reply and take action. Some events currently require no
+//!    action, but most require us to furnish the USB task with either our
+//!    report descriptor, or the next report. We deliver these by sending the
+//!    USB task an `enqueue_report` message, loaning the appropriate section of
+//!    our memory along with it.
+//! 5. The USB task wakes to receive the `enqueue_report` message and copies our
+//!    loaned data into the USB controller's SRAM. It configures the USB
+//!    controller to transmit that data on the next IN operation on that
+//!    endpoint, replies to us (with an empty message), and goes back to sleep.
+//! 6. Receiving our reply, we go back to the top of the event loop and go to
+//!    sleep.
+//!
+//! Or in ASCII art form,
+//!
+//! ```text
+//! +-----------+          +---------+                         +-----------+
+//! | Hardware  |          | USBHID  |                         | Keyboard  |
+//! +-----------+          +---------+                         +-----------+
+//!       |                     |                                    |
+//!       | IRQ                 |                                    |
+//!       |-------------------->|                                    |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | is asleep |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     | posts EVENT notification.          |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | wakes up! |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     |           sends GET_EVENT message. |
+//!       |                     |<-----------------------------------|
+//!       |                     |                                    |
+//!       |                     | returns the event.                 |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |                                    |
+//!       |                     |       sends ENQUEUE_REPORT message |
+//!       |                     |<-----------------------------------|
+//!       |                     | -----------------------\           |
+//!       |                     |-| copies into USB SRAM |           |
+//!       |                     | |----------------------|           |
+//!       |                     |                                    |
+//!       |      endpoint ready |                                    |
+//!       |<--------------------|                                    |
+//!       |                     |                                    |
+//!       |                     | empty reply                        |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |        --------------------------\ |
+//!       |                     |        | also goes back to sleep |-|
+//!       |                     |        |-------------------------| |
+//!       |                     |                                    |
+//! ```
 
 #![no_std]
 #![no_main]
@@ -8,38 +95,45 @@ use drv_stm32l4_usb_api::{UsbHid, UsbEvent};
 use drv_stm32l4_sys_api::{Stm32L4Sys as Sys, Port, Pull};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+/// Counter variable for visibility in the debugger.
 #[no_mangle]
 static REPORTS: AtomicUsize = AtomicUsize::new(0);
 
 #[export_name = "main"]
 fn main() -> ! {
+    // Make IPC clients for the two tasks we interact with.
     let usb = UsbHid::from(SLOTS.usbhid);
     let sys = Sys::from(SLOTS.sys);
 
+    // Configure the two SCANOUT pins (A0 and A1) as outputs.
     sys.set_pin_output(Port::A, 0);
     sys.set_pin_output(Port::A, 1);
 
+    // Configure the two SCANIN pins (B0 and B1) as inputs, with pulldowns.
     sys.set_pin_pull(Port::B, 0, Some(Pull::Down));
     sys.set_pin_pull(Port::B, 1, Some(Pull::Down));
     sys.set_pin_input(Port::B, 0);
     sys.set_pin_input(Port::B, 1);
 
     // Record the current time so we can manage our timer properly.
+    const INTERVAL: u64 = 1; // millisecond
     let mut next_time = userlib::sys_get_timer().now + INTERVAL;
     userlib::sys_set_timer(Some(next_time), hubris_notifications::TIMER);
 
-    const INTERVAL: u64 = 1;
-
+    // Local variables for matrix scanning and key state:
     let mut scan_state = 0;
     let key_codes = [0x04, 0x05, 0x06, 0x07];
     let mut keys_down = [false; 4];
 
+    // Event loop!
     loop {
+        // We are interested in these two events:
         let bits = userlib::sys_recv_notification(
             hubris_notifications::EVENT_READY
             | hubris_notifications::TIMER
         );
 
+        // They can either or both occur at a time, so, check each in turn:
         if bits & hubris_notifications::EVENT_READY != 0 {
             if let Some(event) = usb.get_event() {
                 let mut deliver_report = false;
@@ -65,6 +159,7 @@ fn main() -> ! {
                     }
                 }
                 if deliver_report {
+                    // Construct a HID Boot Keyboard Protocol report.
                     let mut report = [0u8; 8];
                     let mut used = 2;
                     for (i, state) in keys_down.iter_mut().enumerate() {
@@ -73,16 +168,21 @@ fn main() -> ! {
                             used += 1;
                         }
                     }
+                    // Stuff it into endpoint 1's outgoing buffer.
                     usb.enqueue_report(1, &report).ok();
                     REPORTS.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
+
         if bits & hubris_notifications::TIMER != 0 {
+            // Advance key scanning, but only if time has really elapsed. (This
+            // check is me being pedantic: it's possible for other tasks to post
+            // our timer notification instead of the kernel doing it, so, I
+            // check the time.)
             let now = userlib::sys_get_timer().now;
             if now >= next_time {
                 // A real timer event!
-                next_time += INTERVAL;
 
                 match scan_state {
                     0 => {
@@ -100,12 +200,16 @@ fn main() -> ! {
                         scan_state = 0;
                     }
                 }
+                // Bump our timer to the next deadline.
+                next_time += INTERVAL;
                 userlib::sys_set_timer(Some(next_time), hubris_notifications::TIMER);
             }
         }
     }
 }
 
+/// Canned report descriptor that describes a report equivalent to the Boot
+/// Keyboard Protocol report.
 static BOOT_KBD_DESC: [u8; 62] = [
     0x05, 0x01,       //  Usage Page (Desktop),
     0x09, 0x06,       //  Usage (Keyboard),

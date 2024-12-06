@@ -14,7 +14,7 @@ board "fourk" {
 kernel {
     workspace-crate "kernel-generic-stm32l412"
     features "clock-80mhz-hsi16" "clock-hsi48-on" "pwr-vddusb-valid"
-    stack-size 1024
+    stack-size 640
 }
 
 task "super" {
@@ -25,7 +25,7 @@ task "super" {
 
 task "sys" {
     workspace-crate "drv-stm32l4-sys"
-    stack-size 256
+    stack-size 224
     priority 1
     features "chip-stm32l412kb"
     uses-peripheral "rcc"
@@ -34,7 +34,7 @@ task "sys" {
 
 task "usbhid" {
     workspace-crate "drv-stm32l4-usb"
-    stack-size 512
+    stack-size 328
     priority 2
     features "chip-stm32l412kb"
     uses-task "sys"
@@ -49,7 +49,7 @@ task "usbhid" {
 
 task "keyboard" {
     workspace-crate "keyboard"
-    stack-size 512
+    stack-size 360
     priority 3
     uses-task "usbhid"
     uses-task "sys"
@@ -57,7 +57,7 @@ task "keyboard" {
     notification "timer"
 }
 
-task "l4blinky" {
+/-task "l4blinky" {
     workspace-crate "l4blinky"
     stack-size 256
     priority 3
