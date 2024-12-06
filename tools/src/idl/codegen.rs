@@ -504,14 +504,21 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
         }
     };
 
+    let deserialize_args = if argtypes.is_empty() {
+        None
+    } else {
+        Some(quote! {
+            let args = hubpack::deserialize::<(#(#argtypes,)*)>(msg_data)
+                .map_err(|_| ReplyFaultReason::BadMessageContents)?
+                .0;
+        })
+    };
+
     Ok(quote! {
-        let args = hubpack::deserialize::<(#(#argtypes,)*)>(msg_data)
-            .map_err(|_| ReplyFaultReason::BadMessageContents)?
-            .0;
+        #deserialize_args
         #leases
         let r = self.1.#method_name(msg, #(#arg_expansion),*)?;
         #respond
         Ok(())
     })
 }
-
