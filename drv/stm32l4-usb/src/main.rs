@@ -510,7 +510,7 @@ impl Server {
         }
    }
 
-    fn on_in_iface(&mut self, ep: usize) {
+    fn on_in_iface(&mut self, _ep: usize) {
         // The host has just read a report. Poke the keyboard task to generate
         // another one. Note that the hardware flips the EP to NAK after
         // transmission, we shouldn't have to do that.
