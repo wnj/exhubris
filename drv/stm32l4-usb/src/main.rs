@@ -154,8 +154,7 @@ impl Server {
                         (Dir::HostToDevice, Some(StdRequestCode::SetAddress)) => {
                             let addr = setup.value.get() as u8 & 0x7F;
                             self.pending_address = Some(addr);
-                            usbsram::set_ep_tx_count(ep, 0);
-                            self.configure_response(ep, Stat::VALID, Stat::VALID);
+                            self.valid_tx_response(0, &[], None);
                         }
                         (Dir::DeviceToHost, Some(StdRequestCode::GetDescriptor)) => {
                             let txoff = usbsram::get_ep_tx_offset(ep);
@@ -167,21 +166,18 @@ impl Server {
                                 }
                                 None => {
                                     emit(Event::UnknownDescriptor);
-                                    usbsram::set_ep_tx_count(ep, 0);
-                                    self.configure_response(ep, Stat::STALL, Stat::STALL);
+                                    self.fail(ep);
                                 }
                             }
                         }
                         (Dir::HostToDevice, Some(StdRequestCode::SetConfiguration)) => {
-                            usbsram::set_ep_tx_count(ep, 0);
                             self.on_set_config(setup.value.get());
-                            self.configure_response(ep, Stat::VALID, Stat::VALID);
+                            self.valid_tx_response(ep, &[], None);
                             self.state = DeviceState::Configured;
                         }
                         (x, y) => {
                             emit(Event::UnknownStandard(x, y));
-                            usbsram::set_ep_tx_count(ep, 0);
-                            self.configure_response(ep, Stat::STALL, Stat::STALL);
+                            self.fail(ep);
                         }
                     }
                 }
@@ -193,14 +189,12 @@ impl Server {
                 }
                 (x, y) => {
                     emit(Event::UnknownTop(x, y));
-                    usbsram::set_ep_tx_count(ep, 0);
-                    self.configure_response(ep, Stat::STALL, Stat::STALL);
+                    self.fail(ep);
                 }
             }
         } else {
             // TODO setup on other endpoints (not required for HID)
-            usbsram::set_ep_tx_count(ep, 0);
-            self.configure_response(ep, Stat::STALL, Stat::STALL);
+            self.fail(ep);
         }
     }
 
@@ -244,6 +238,20 @@ impl Server {
             w.set_stat_tx(Stat::from_bits(orig.stat_tx().to_bits() ^ tx.to_bits()));
             w.set_stat_rx(Stat::from_bits(orig.stat_rx().to_bits() ^ rx.to_bits()));
         });
+    }
+
+    fn valid_tx_response(&mut self, ep: usize, bytes: &[u8], limit: Option<u16>) {
+        usbsram::write_bytes(usbsram::get_ep_tx_offset(ep), bytes);
+        // Update transmittable count. Some requests read only a prefix, usually
+        // of a descriptor, so enforce the limit.
+        usbsram::set_ep_tx_count(ep, limit.unwrap_or(u16::MAX).min(bytes.len() as u16));
+        // Set the hardware to deliver it when needed.
+        self.configure_response(ep, Stat::VALID, Stat::VALID);
+    }
+
+    fn fail(&mut self, ep: usize) {
+        usbsram::set_ep_tx_count(ep, 0);
+        self.configure_response(ep, Stat::STALL, Stat::STALL);
     }
 
 
@@ -293,24 +301,19 @@ impl Server {
                         emit(Event::HidDescriptor);
                         // HID Report Descriptor
                         let desc = &hid::BOOT_KBD_DESC;
-                        usbsram::write_bytes(usbsram::get_ep_tx_offset(0), desc);
-                        // Update transmittable count.
-                        usbsram::set_ep_tx_count(0, setup.length.get().min(desc.len() as u16));
-                        self.configure_response(0, Stat::VALID, Stat::VALID);
+                        self.valid_tx_response(0, desc, Some(setup.length.get()));
                     }
                     _ => {
                         // Unknown kind of descriptor.
                         emit(Event::UnknownIfaceDescriptor);
-                        usbsram::set_ep_tx_count(0, 0);
-                        self.configure_response(0, Stat::STALL, Stat::STALL);
+                        self.fail(0);
                     }
                 }
             }
             _ => {
                 // Unsupported std operation
                 emit(Event::UnknownIfaceOperation);
-                usbsram::set_ep_tx_count(0, 0);
-                self.configure_response(0, Stat::STALL, Stat::STALL);
+                self.fail(0);
             }
         }
     }
@@ -319,20 +322,17 @@ impl Server {
          match (setup.request_type.data_phase_direction(), HidRequestCode::from_u8(setup.request)) {
             (Dir::HostToDevice, Some(HidRequestCode::SetIdle)) => {
                 emit(Event::HidSetIdle);
-                usbsram::set_ep_tx_count(0, 0);
-                self.configure_response(0, Stat::VALID, Stat::VALID);
+                self.valid_tx_response(0, &[], None);
             }
             (Dir::HostToDevice, Some(HidRequestCode::SetReport)) => {
                 emit(Event::HidSetReport);
                 match setup.value.get() {
                     0x02_00 => {
                         self.expected_out = Some(hid::OutKind::SetReport);
-                        usbsram::set_ep_tx_count(0, 0);
-                        self.configure_response(0, Stat::VALID, Stat::VALID);
+                        self.valid_tx_response(0, &[], None);
                     }
                     _ => {
-                        usbsram::set_ep_tx_count(0, 0);
-                        self.configure_response(0, Stat::STALL, Stat::STALL);
+                        self.fail(0);
                     }
                 }
             }
@@ -340,14 +340,12 @@ impl Server {
                 // whatever - our report protocol matches the boot protocol so
                 // it's all the same to us.
                 emit(Event::HidSetProtocol);
-                usbsram::set_ep_tx_count(0, 0);
-                self.configure_response(0, Stat::VALID, Stat::VALID);
+                self.valid_tx_response(0, &[], None);
             }
             _ => {
                 // Unsupported
                 emit(Event::UnknownClassOperation);
-                usbsram::set_ep_tx_count(0, 0);
-                self.configure_response(0, Stat::STALL, Stat::STALL);
+                self.fail(0);
             }
         }
    }
