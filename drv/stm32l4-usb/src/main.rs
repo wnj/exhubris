@@ -304,9 +304,9 @@ impl Server {
                     Some(HidClassDescriptorType::Report) => {
                         emit(Event::HidDescriptor);
                         // HID Report Descriptor
-                        // TODO: this should be deferred to the keyboard task!
-                        let desc = &hid::BOOT_KBD_DESC;
-                        self.valid_tx_response(0, desc, Some(setup.length.get()));
+                        self.poke_keyboard_task(UsbEvent::ReportDescriptorNeeded);
+                        // TODO: technically we should be conveying the
+                        // requested length to the keyboard task.
                     }
                     _ => {
                         // Unknown kind of descriptor.
@@ -467,13 +467,14 @@ impl UsbHid for Server {
         data: Leased<Read, u8>,
     ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
         match endpoint {
-            1 => {
+            0 | 1 => {
                 if data.len() > 0x40 {
                     return Err(ReplyFaultReason::BadLeases);
                 }
                 // Amortize the syscall overhead a _little bit_ without having
                 // to burn 64 bytes of stack.
                 let mut xfer_buffer = [0; 8];
+                let mut sram_offset = usbsram::get_ep_tx_offset(endpoint as usize);
                 for i in (0..data.len()).step_by(8) {
                     let chunk_end = usize::min(data.len(), i + 8);
                     // Yes, LLVM should be able to see that this is < 8, but it
@@ -486,10 +487,11 @@ impl UsbHid for Server {
                         // code -- it won't be delivered.
                         return Err(ReplyFaultReason::UndefinedOperation);
                     }
-                    usbsram::write_bytes(usbsram::get_ep_tx_offset(1), chunk_buffer);
+                    usbsram::write_bytes(sram_offset, chunk_buffer);
+                    sram_offset += chunk_len;
                 }
-                usbsram::set_ep_tx_count(1, data.len() as u16);
-                self.configure_response(1, Stat::VALID, Stat::VALID);
+                usbsram::set_ep_tx_count(endpoint as usize, data.len() as u16);
+                self.configure_response(endpoint as usize, Stat::VALID, Stat::VALID);
                 emit(Event::HidReportReady);
                 Ok(Ok(true))
             }
