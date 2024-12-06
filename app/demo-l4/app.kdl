@@ -43,7 +43,7 @@ task "usbhid" {
         irq "irq" "usb-irq"
     }
     config {
-        keyboard "keyboard#report_needed"
+        keyboard "keyboard#event_ready"
     }
 }
 
@@ -53,7 +53,7 @@ task "keyboard" {
     priority 3
     uses-task "usbhid"
     uses-task "sys"
-    notification "report_needed"
+    notification "event_ready"
     notification "timer"
 }
 

@@ -4,7 +4,7 @@
 #![no_main]
 
 use hubris_task_slots::SLOTS;
-use drv_stm32l4_usb_api::UsbHid;
+use drv_stm32l4_usb_api::{UsbHid, UsbEvent};
 use drv_stm32l4_sys_api::{Stm32L4Sys as Sys, Port, Pull};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -36,21 +36,42 @@ fn main() -> ! {
 
     loop {
         let bits = userlib::sys_recv_notification(
-            hubris_notifications::REPORT_NEEDED
+            hubris_notifications::EVENT_READY
             | hubris_notifications::TIMER
         );
 
-        if bits & hubris_notifications::REPORT_NEEDED != 0 {
-            let mut report = [0u8; 8];
-            let mut used = 2;
-            for (i, state) in keys_down.iter_mut().enumerate() {
-                if *state {
-                    report[used] = key_codes[i];
-                    used += 1;
+        if bits & hubris_notifications::EVENT_READY != 0 {
+            if let Some(event) = usb.get_event() {
+                let mut deliver_report = false;
+                match event {
+                    UsbEvent::Reset => {
+                        // We're not really tracking protocol state yet, so,
+                        // nothing to do here.
+                    }
+                    UsbEvent::Configured => {
+                        // When we get configured, we want to prepare an initial
+                        // report.
+                        deliver_report = true;
+                    }
+                    UsbEvent::ReportNeeded => {
+                        // When our last report is consumed, we definitely want
+                        // to prepare a new one.
+                        deliver_report = true;
+                    }
+                }
+                if deliver_report {
+                    let mut report = [0u8; 8];
+                    let mut used = 2;
+                    for (i, state) in keys_down.iter_mut().enumerate() {
+                        if *state {
+                            report[used] = key_codes[i];
+                            used += 1;
+                        }
+                    }
+                    usb.enqueue_report(1, &report).ok();
+                    REPORTS.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            usb.enqueue_report(1, &report).ok();
-            REPORTS.fetch_add(1, Ordering::Relaxed);
         }
         if bits & hubris_notifications::TIMER != 0 {
             let now = userlib::sys_get_timer().now;

@@ -71,6 +71,7 @@ fn main() -> ! {
         state: DeviceState::Powered,
         keyboard_task: TaskId::gen0(KEYBOARD_TASK_INDEX),
         expected_out: None,
+        queued_event: None,
     };
     userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
 
@@ -86,6 +87,7 @@ struct Server {
     state: DeviceState,
     keyboard_task: TaskId,
     expected_out: Option<hid::OutKind>,
+    queued_event: Option<UsbEvent>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -137,6 +139,7 @@ impl Server {
         OUR_ADDRESS.store(0, Ordering::Relaxed);
         self.pending_address = None;
         self.state = DeviceState::Default;
+        self.queued_event = Some(UsbEvent::Reset);
     }
 
     fn on_setup(&mut self, ep: usize) {
@@ -275,11 +278,12 @@ impl Server {
             w.set_ea(1);
         });
 
-        self.poke_keyboard_task();
+        self.poke_keyboard_task(UsbEvent::Configured);
     }
 
-    fn poke_keyboard_task(&mut self) {
+    fn poke_keyboard_task(&mut self, event: UsbEvent) {
         emit(Event::PokedKeyboard);
+        self.queued_event = Some(event);
         loop {
             match userlib::sys_post(self.keyboard_task, KEYBOARD_NOTIFICATION_MASK) {
                 Ok(()) => break,
@@ -300,6 +304,7 @@ impl Server {
                     Some(HidClassDescriptorType::Report) => {
                         emit(Event::HidDescriptor);
                         // HID Report Descriptor
+                        // TODO: this should be deferred to the keyboard task!
                         let desc = &hid::BOOT_KBD_DESC;
                         self.valid_tx_response(0, desc, Some(setup.length.get()));
                     }
@@ -322,6 +327,7 @@ impl Server {
          match (setup.request_type.data_phase_direction(), HidRequestCode::from_u8(setup.request)) {
             (Dir::HostToDevice, Some(HidRequestCode::SetIdle)) => {
                 emit(Event::HidSetIdle);
+                // TODO: plumb this through to keyboard
                 self.valid_tx_response(0, &[], None);
             }
             (Dir::HostToDevice, Some(HidRequestCode::SetReport)) => {
@@ -340,6 +346,7 @@ impl Server {
                 // whatever - our report protocol matches the boot protocol so
                 // it's all the same to us.
                 emit(Event::HidSetProtocol);
+                // TODO: plumb this through to keyboard
                 self.valid_tx_response(0, &[], None);
             }
             _ => {
@@ -355,7 +362,7 @@ impl Server {
         // another one. Note that the hardware flips the EP to NAK after
         // transmission, we shouldn't have to do that.
         emit(Event::HidReportCollected);
-        self.poke_keyboard_task();
+        self.poke_keyboard_task(UsbEvent::ReportNeeded);
     }
 
     fn on_out_iface(&mut self, ep: usize) {
@@ -491,6 +498,13 @@ impl UsbHid for Server {
                 Err(ReplyFaultReason::BadMessageContents)
             }
         }
+    }
+
+    fn get_event(
+        &mut self,
+        _full_msg: &Message<'_>,
+    ) -> Result<Option<UsbEvent>, ReplyFaultReason> {
+        Ok(self.queued_event.take())
     }
 }
 
