@@ -635,17 +635,32 @@ fn do_cargo_build(
             cmd.args(["--git", repo]);
             cmd.args(["--rev", rev]);
 
-            let mut installroot = tmpdir.join(format!("{product_name}.cargo-install"));
+            let installroot = tmpdir.join(format!("{product_name}.cargo-install"));
             let targetdir = tmpdir.join(format!("{product_name}.cargo-target"));
 
             cmd.arg("--root");
             cmd.arg(&installroot);
 
+            let bindir = installroot.join("bin");
+            let binpath = bindir.join(&plan.bin_name);
+
+            // Extend the PATH to add our output directory so that cargo won't
+            // unconditionally warn about every build, sigh.
+            match std::env::var_os("PATH") {
+                Some(path) => {
+                    let mut parts = std::env::split_paths(&path).collect::<Vec<_>>();
+                    parts.push(bindir.clone());
+                    let new_path = std::env::join_paths(parts).into_diagnostic()?;
+                    cmd.env("PATH", new_path);
+                }
+                None => {
+                    cmd.env("PATH", &bindir);
+                }
+            }
+
             cmd.env("CARGO_TARGET_DIR", targetdir);
 
-            installroot.push("bin");
-            installroot.push(&plan.bin_name);
-            installroot
+            binpath
         }
     };
 
