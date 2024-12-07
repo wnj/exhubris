@@ -4,7 +4,7 @@ use std::io::Write;
 use serde_json::{Map, Value};
 
 fn main() {
-    let config: Map<String, Value> = hubris_build_util::get_task_config().unwrap();
+    let config: Map<String, Value> = hubris_build_util::get_task_config();
 
     let mut out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     out.push("task_config.rs");

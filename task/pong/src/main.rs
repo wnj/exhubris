@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use userlib::{sys_panic, sys_recv_open, sys_reply, ResponseCode};
+use userlib::{sys_panic, sys_recv_msg_open, sys_reply, ResponseCode};
 
 #[no_mangle]
 static mut MESSAGE_COUNT: u32 = 0;
@@ -10,7 +10,7 @@ static mut MESSAGE_COUNT: u32 = 0;
 fn main() -> ! {
     let mut buffer = [core::mem::MaybeUninit::uninit(); 32];
     loop {
-        let rm = sys_recv_open(&mut buffer, 0);
+        let rm = sys_recv_msg_open(&mut buffer);
         unsafe {
             MESSAGE_COUNT = MESSAGE_COUNT.wrapping_add(1);
         }
