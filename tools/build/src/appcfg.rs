@@ -1280,6 +1280,8 @@ pub fn plan_build(
                 }
             }
             PackageSource::GitCrate { repo, name, rev } => {
+                smuggled_env.insert("CARGO_PROFILE_RELEASE_LTO".to_string(), "true".to_string());
+                smuggled_env.insert("CARGO_PROFILE_RELEASE_DEBUG".to_string(), "true".to_string());
                 BuildPlan {
                     method: BuildMethod::CargoInstallGit {
                         repo: repo.clone(),
@@ -1292,7 +1294,7 @@ pub fn plan_build(
                     cargo_features: task.cargo_features.keys().cloned().collect(),
                     default_features: task.default_features,
                     smuggled_env,
-                    rustflags: Default::default(), // TODO
+                    rustflags: Default::default(),
                 }
             }
         };
