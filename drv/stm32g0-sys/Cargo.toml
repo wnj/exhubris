@@ -19,4 +19,4 @@ test = false
 bench = false
 
 [build-dependencies]
-tools = { version = "0.1.0", path = "../../tools" }
+hubris-build.workspace = true

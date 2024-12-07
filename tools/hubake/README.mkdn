@@ -1,0 +1,5 @@
+# `hubake`: façade build tool for Hubris
+
+`hubake` is intended to be installed either globally or per-user (using e.g.
+`cargo install`). It serves as a façade for whatever version of the Hubris build
+tools a specific project requires.

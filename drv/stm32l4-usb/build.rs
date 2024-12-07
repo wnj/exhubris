@@ -7,9 +7,9 @@ fn main() {
     let outpath = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     println!("cargo::rerun-if-changed=usbhid-idl.kdl");
-    let iface = tools::idl::load_interface("usbhid-idl.kdl").unwrap();
-    let server = tools::idl::codegen::generate_server(&iface).unwrap();
-    let server = tools::idl::codegen::format_code(&server);
+    let iface = hubris_build::idl::load_interface("usbhid-idl.kdl").unwrap();
+    let server = hubris_build::idl::codegen::generate_server(&iface).unwrap();
+    let server = hubris_build::idl::codegen::format_code(&server);
     let genserver_path = outpath.join("generated_server.rs");
 
     std::fs::write(&genserver_path, server).unwrap();

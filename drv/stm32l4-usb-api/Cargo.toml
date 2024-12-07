@@ -11,4 +11,4 @@ userlib.workspace = true
 zerocopy = "0.8.12"
 
 [build-dependencies]
-tools = { version = "0.1.0", path = "../../tools" }
+hubris-build.workspace = true

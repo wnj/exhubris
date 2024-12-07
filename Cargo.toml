@@ -5,13 +5,15 @@ members = [
     "sys/*",
     "task/*",
     "drv/*",
-    "tools",
+    "tools/build",
+    "tools/hubake",
 ]
 
 [workspace.dependencies]
 userlib = {path = "sys/userlib"}
 kipc = {path = "sys/kipc"}
 hubris-num-tasks = {path = "sys/num-tasks"}
+hubris-build = {path="tools/build"}
 
 [profile.release]
 debug = true

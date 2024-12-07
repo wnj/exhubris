@@ -1,0 +1,11 @@
+[package]
+name = "hubake"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.94"
+base64 = "0.22.1"
+dirs = "5.0.1"
+serde = { version = "1.0.215", features = ["derive"] }
+toml = "0.8.19"

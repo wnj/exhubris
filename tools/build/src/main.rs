@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use tools::{alloc::{allocate_space, TaskAllocation}, appcfg::{AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
+use hubris_build::{alloc::{allocate_space, TaskAllocation}, appcfg::{self, AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
 
 use hubris_build_kconfig as kconfig;
 
@@ -19,13 +19,8 @@ struct Tool {
 
 #[derive(Parser)]
 enum Cmd {
-    /// Builds a Hubris application, given a path to its config and the location
-    /// of the workspace root.
+    /// Builds a Hubris application, given a path to its config.
     Build {
-        /// Location of the workspace root. This will be used to search for chip
-        /// and board files.
-        #[clap(short, long)]
-        root: PathBuf,
         /// Path to the application definition.
         cfg_path: PathBuf,
 
@@ -50,9 +45,10 @@ fn main() -> miette::Result<()> {
     let args = Tool::parse();
 
     match args.cmd {
-        Cmd::Build { cfg_path, root, cargo_verbose } => {
+        Cmd::Build { cfg_path, cargo_verbose } => {
             // Canonicalize directories and locate/parse input files.
-            let root = root.canonicalize().into_diagnostic()?;
+            let root = std::env::var("HUBRIS_PROJECT_ROOT").into_diagnostic()?;
+            let root = PathBuf::from(root);
             let doc_src = fs::read_to_string(&cfg_path)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("can't read {}", cfg_path.display()))?;
@@ -60,11 +56,11 @@ fn main() -> miette::Result<()> {
                 cfg_path.display().to_string(),
                 doc_src.clone(),
             ));
-            let doc: kdl::KdlDocument = tools::appcfg::add_source(&source, || {
+            let doc: kdl::KdlDocument = appcfg::add_source(&source, || {
                 Ok(doc_src.parse()?)
             })?;
-            let ctx = tools::appcfg::FsContext::from_root(&root);
-            let app = tools::appcfg::parse_app(source, &doc, &ctx)?;
+            let ctx = appcfg::FsContext::from_root(&root);
+            let app = appcfg::parse_app(source, &doc, &ctx)?;
 
             // See if we understand this target.
             let target_spec = get_target_spec(app.board.chip.target_triple.value())
@@ -80,7 +76,7 @@ fn main() -> miette::Result<()> {
 
             // Interrogate the installed toolchain to discover things like the
             // linker path.
-            let env = tools::determine_build_env()?;
+            let env = hubris_build::determine_build_env()?;
 
             // Print the kickoff header:
             simple_table([
@@ -92,7 +88,7 @@ fn main() -> miette::Result<()> {
             ]);
 
             // Analyze the app and make a build plan.
-            let overall_plan = tools::appcfg::plan_build(&app)?;
+            let overall_plan = hubris_build::appcfg::plan_build(&app)?;
             // Locate the workspace Cargo target directory.
             let targetroot = root.join("target");
             // Create our working directory.
@@ -495,23 +491,23 @@ fn main() -> miette::Result<()> {
             Ok(())
         }
         Cmd::CheckIdl { path } => {
-            let interface = tools::idl::load_interface(path)?;
+            let interface = hubris_build::idl::load_interface(path)?;
             println!();
             println!("Got:");
             println!("{interface:#?}");
 
-            let client = tools::idl::codegen::generate_client(&interface)?;
-            let client = tools::idl::codegen::format_code(&client);
+            let client = hubris_build::idl::codegen::generate_client(&interface)?;
+            let client = hubris_build::idl::codegen::format_code(&client);
             println!();
             println!("Client:");
             println!("{client}");
             for (name, t) in &interface.types {
                 match t {
-                    tools::idl::TypeDef::Enum(e) => {
-                        let s = tools::idl::codegen::generate_enum(name, e)?;
-                        println!("{}", tools::idl::codegen::format_code(&s));
+                    hubris_build::idl::TypeDef::Enum(e) => {
+                        let s = hubris_build::idl::codegen::generate_enum(name, e)?;
+                        println!("{}", hubris_build::idl::codegen::format_code(&s));
                     }
-                    tools::idl::TypeDef::Struct(_) => (),
+                    hubris_build::idl::TypeDef::Struct(_) => (),
                 }
             }
             Ok(())
