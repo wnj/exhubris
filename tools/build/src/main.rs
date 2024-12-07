@@ -106,7 +106,7 @@ fn main() -> miette::Result<()> {
             maybe_create_dir(&initial_build_dir).into_diagnostic()?;
             for (name, plan) in &overall_plan.tasks {
                 do_cargo_build(
-                    &root.join("task-rlink.x"),
+                    include_str!("../../../files/task-rlink.x"),
                     plan,
                     LinkStyle::Partial,
                     &targetroot,
@@ -123,6 +123,7 @@ fn main() -> miette::Result<()> {
             let mut size_reqs: BTreeMap<String, IndexMap<&str, u64>> = BTreeMap::new();
             let temp_link_dir = workdir.join("link2");
             maybe_create_dir(&temp_link_dir).into_diagnostic()?;
+            std::fs::write(workdir.join("task-link2.x"), include_str!("../../../files/task-link2.x")).into_diagnostic()?;
             for taskname in overall_plan.tasks.keys() {
                 let region_sizes = relink_for_size(
                     &env,
@@ -132,7 +133,7 @@ fn main() -> miette::Result<()> {
                     taskname,
                     &initial_build_dir.join(taskname),
                     &temp_link_dir.join(taskname),
-                    &root.join("task-link2.x"),
+                    &workdir.join("task-link2.x"),
                 )?;
 
                 for (region, range) in region_sizes {
@@ -225,6 +226,7 @@ fn main() -> miette::Result<()> {
             }
             maybe_create_dir(&dir3).into_diagnostic()?;
             let mut built_tasks = vec![];
+            std::fs::write(workdir.join("task-link3.x"), include_str!("../../../files/task-link3.x")).into_diagnostic()?;
             for taskname in overall_plan.tasks.keys() {
                 let built_task = relink_final(
                     &env,
@@ -234,7 +236,7 @@ fn main() -> miette::Result<()> {
                     taskname,
                     &initial_build_dir.join(taskname),
                     &dir3.join(taskname),
-                    &root.join("task-link3.x"),
+                    &workdir.join("task-link3.x"),
                     &allocs.tasks[taskname],
                 ).with_context(|| format!("failed final link for task {taskname}"))?;
 
@@ -368,8 +370,9 @@ fn main() -> miette::Result<()> {
                 "12345678".to_string(),
             );
 
+            std::fs::write(workdir.join("kernel-link.x"), include_str!("../../../files/kernel-link.x")).into_diagnostic()?;
             do_cargo_build(
-                &root.join("kernel-link.x"),
+                include_str!("../../../files/kernel-link.x"),
                 &overall_plan.kernel,
                 LinkStyle::Full,
                 &targetroot,
@@ -562,7 +565,7 @@ enum LinkStyle {
 
 #[allow(clippy::too_many_arguments)]
 fn do_cargo_build(
-    linker_script: &Path,
+    linker_script_text: &str,
     plan: &BuildPlan,
     link_style: LinkStyle,
     targetroot: &Path,
@@ -598,6 +601,7 @@ fn do_cargo_build(
     }
 
     let linker_script_copy = tmpdir.join("link.x");
+    std::fs::write(&linker_script_copy, linker_script_text).into_diagnostic()?;
 
     let mut rustflags = format!("-C link-arg=-L{} -C link-arg=-T{}{}",
             tmpdir.display(),
@@ -661,13 +665,6 @@ fn do_cargo_build(
     for (k, v) in &plan.smuggled_env {
         cmd.env(k, v);
     }
-
-    //println!("{cmd:?}");
-
-    std::fs::copy(
-        linker_script,
-        &linker_script_copy,
-    ).into_diagnostic()?;
 
     let status = cmd.status().into_diagnostic()?;
     if !status.success() {
