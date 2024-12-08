@@ -69,76 +69,137 @@ pub fn sys_send_to_kernel(
     (retval, (ret64 >> 32) as usize)
 }
 
-global_asm!("
-.section .text.sys_send_stub
-.globl sys_send_stub
-.type sys_send_stub,function
-sys_send_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_send_stub
+        .globl sys_send_stub
+        .type sys_send_stub,function
+        sys_send_stub:
+            .cfi_startproc
 
-    @ We get the first four arguments in r0-r3, and the next three on the stack.
-    @ We need one additional working register for the syscall number, for a total
-    @ of eight.
+            @ We get the first four arguments in r0-r3, and the next three from the stack.
+            @ We need one additional working register for the syscall number, for a total
+            @ of eight.
 
-    @ Stash the register values we're about to destroy.
-    push {{r4-r7, lr}}
-    .cfi_adjust_cfa_offset 20
-    .cfi_offset r4, -20
-    .cfi_offset r5, -16
-    .cfi_offset r6, -12
-    .cfi_offset r7, -8
-    .cfi_offset lr, -4
+            @ Stash the register values we're about to destroy.
+            push {{r4-r11, lr}}
+            .cfi_adjust_cfa_offset 36
+            .cfi_offset r4, -36
+            .cfi_offset r5, -32
+            .cfi_offset r6, -28
+            .cfi_offset r7, -24
+            .cfi_offset r8, -20
+            .cfi_offset r9, -16
+            .cfi_offset r10, -12
+            .cfi_offset r11, -8
+            .cfi_offset lr, -4
 
-    mov r4, r8
-    mov r5, r9
-    mov r6, r10
-    mov r7, r11
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -36
-    .cfi_offset r5, -32
-    .cfi_offset r6, -28
-    .cfi_offset r7, -24
-    
-    @ Materialize the sysnum constant. For Thumb Reasons this has to go through
-    @ r4 on the way, so we do this while we still have a bunch of temp registers
-    @ free.
-    movs r4, #{sysnum}
-    mov r11, r4
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Load the three operands from the stack. We've pushed nine words onto
-    @ the stack, so we need to address _past_ that.
-    add r4, sp, #(9 * 4)
-    ldm r4, {{r4-r6}}
-    mov r8, r4
-    mov r9, r5
-    mov r10, r6
+            @ Load the three operands from the stack. We've pushed nine words onto
+            @ the stack, so we need to address _past_ that.
+            add r4, sp, #(9 * 4)
+            ldm r4, {{r8-r10}}
 
-    @ Copy up register operands.
-    mov r4, r0
-    mov r5, r1
-    mov r6, r2
-    mov r7, r3
+            @ Copy up register operands.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
 
-    svc #0
+            svc #0
 
-    @ Put the results into the function return position.
-    mov r0, r4
-    mov r1, r5
-    @ Restore the registers.
-    pop {{r4-r7}}
-    .cfi_adjust_cfa_offset -16
-    mov r8, r4
-    mov r9, r5
-    mov r10, r6
-    mov r11, r7
-    pop {{r4-r7, pc}}
+            @ Put the results into the function return position.
+            mov r0, r4
+            mov r1, r5
+            @ Restore the registers.
+            pop {{r4-r11, pc}}
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Send as u32,
+        );
+    } else {
+        // Fall back to the generally applicable, ARMv6-M-compatible subset.
+        global_asm!("
+        .section .text.sys_send_stub
+        .globl sys_send_stub
+        .type sys_send_stub,function
+        sys_send_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::Send as u32,
-);
+            @ We get the first four arguments in r0-r3, and the next three on the stack.
+            @ We need one additional working register for the syscall number, for a total
+            @ of eight.
 
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7, lr}}
+            .cfi_adjust_cfa_offset 20
+            .cfi_offset r4, -20
+            .cfi_offset r5, -16
+            .cfi_offset r6, -12
+            .cfi_offset r7, -8
+            .cfi_offset lr, -4
+
+            mov r4, r8
+            mov r5, r9
+            mov r6, r10
+            mov r7, r11
+            push {{r4-r7}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -36
+            .cfi_offset r5, -32
+            .cfi_offset r6, -28
+            .cfi_offset r7, -24
+
+            @ Materialize the sysnum constant. For Thumb Reasons this has to go through
+            @ r4 on the way, so we do this while we still have a bunch of temp registers
+            @ free.
+            movs r4, #{sysnum}
+            mov r11, r4
+
+            @ Load the three operands from the stack. We've pushed nine words onto
+            @ the stack, so we need to address _past_ that.
+            add r4, sp, #(9 * 4)
+            ldm r4, {{r4-r6}}
+            mov r8, r4
+            mov r9, r5
+            mov r10, r6
+
+            @ Copy up register operands.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+
+            svc #0
+
+            @ Put the results into the function return position.
+            mov r0, r4
+            mov r1, r5
+            @ Restore the registers.
+            pop {{r4-r7}}
+            .cfi_adjust_cfa_offset -16
+            mov r8, r4
+            mov r9, r5
+            mov r10, r6
+            mov r11, r7
+            pop {{r4-r7, pc}}
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Send as u32,
+        );
+    }
+}
 /// The actual return register layout after a call to `recv`.
 ///
 /// This lets us blit the return registers directly into this struct from the
@@ -344,72 +405,131 @@ pub fn sys_recv_notification(
     rm.operation_or_notification
 }
 
-global_asm!("
-.section .text.sys_recv_stub
-.globl sys_recv_stub
-.type sys_recv_stub,function
-sys_recv_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_recv_stub
+        .globl sys_recv_stub
+        .type sys_recv_stub,function
+        sys_recv_stub:
+            .cfi_startproc
 
-    @ Stash the register values we're about to destroy.
-    push {{r4-r7, lr}}
-    .cfi_adjust_cfa_offset 20
-    .cfi_offset r4, -20
-    .cfi_offset r5, -16
-    .cfi_offset r6, -12
-    .cfi_offset r7, -8
-    .cfi_offset lr, -4
+            @ Stash the register values we're about to destroy.
+            push {{r4-r11, lr}}
+            .cfi_adjust_cfa_offset 36
+            .cfi_offset r4, -36
+            .cfi_offset r5, -32
+            .cfi_offset r6, -28
+            .cfi_offset r7, -24
+            .cfi_offset r8, -20
+            .cfi_offset r9, -16
+            .cfi_offset r10, -12
+            .cfi_offset r11, -8
+            .cfi_offset lr, -4
 
-    mov r4, r8
-    mov r5, r9
-    mov r6, r10
-    mov r7, r11
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -36
-    .cfi_offset r5, -32
-    .cfi_offset r6, -28
-    .cfi_offset r7, -24
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
 
-    @ Move arguments 0-3 into the correct registers.
-    mov r4, r0
-    mov r5, r1
-    mov r6, r2
-    mov r7, r3
+            @ Collect the final argument from the stack. This isn't an argument to the
+            @ kernel, it's our out-buffer-pointer. We could technically do this _after_
+            @ the syscall.
+            ldr r3, [sp, #(9 * 4)]
 
-    @ Collect the final argument from the stack. This isn't an argument to the
-    @ kernel, it's our out-buffer-pointer. We could technically do this _after_
-    @ the syscall.
-    ldr r3, [sp, #(9 * 4)]
-    
-    svc #0
+            svc #0
 
-    @ Status flag into return position.
-    mov r0, r4
-    @ Write the rest through our out-buffer pointer.
-    stm r3!, {{r5-r7}}
-    mov r5, r8
-    mov r6, r9
-    stm r3!, {{r5-r6}}
+            @ Status flag into return position.
+            mov r0, r4
+            @ Write the rest through our out-buffer pointer.
+            stm r3!, {{r5-r9}}
 
-    @ Restore the registers.
-    pop {{r4-r7}}
-    .cfi_adjust_cfa_offset -16
-    mov r8, r4
-    mov r9, r5
-    mov r10, r6
-    mov r11, r7
-    pop {{r4-r7, pc}}
+            @ Restore the registers.
+            pop {{r4-r11, pc}}
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Recv as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_recv_stub
+        .globl sys_recv_stub
+        .type sys_recv_stub,function
+        sys_recv_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::Recv as u32,
-);
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7, lr}}
+            .cfi_adjust_cfa_offset 20
+            .cfi_offset r4, -20
+            .cfi_offset r5, -16
+            .cfi_offset r6, -12
+            .cfi_offset r7, -8
+            .cfi_offset lr, -4
+
+            mov r4, r8
+            mov r5, r9
+            mov r6, r10
+            mov r7, r11
+            push {{r4-r7}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -36
+            .cfi_offset r5, -32
+            .cfi_offset r6, -28
+            .cfi_offset r7, -24
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+
+            @ Collect the final argument from the stack. This isn't an argument to the
+            @ kernel, it's our out-buffer-pointer. We could technically do this _after_
+            @ the syscall.
+            ldr r3, [sp, #(9 * 4)]
+
+            svc #0
+
+            @ Status flag into return position.
+            mov r0, r4
+            @ Write the rest through our out-buffer pointer.
+            stm r3!, {{r5-r7}}
+            mov r5, r8
+            mov r6, r9
+            stm r3!, {{r5-r6}}
+
+            @ Restore the registers.
+            pop {{r4-r7}}
+            .cfi_adjust_cfa_offset -16
+            mov r8, r4
+            mov r9, r5
+            mov r10, r6
+            mov r11, r7
+            pop {{r4-r7, pc}}
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Recv as u32,
+        );
+    }
+}
 
 #[inline(always)]
 pub fn sys_reply(
@@ -427,50 +547,98 @@ pub fn sys_reply(
     }
 }
 
-global_asm!("
-.section .text.sys_reply_stub
-.globl sys_reply_stub
-.type sys_reply_stub,function
-sys_reply_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_reply_stub
+        .globl sys_reply_stub
+        .type sys_reply_stub,function
+        sys_reply_stub:
+            .cfi_startproc
 
-    @ Stash the register values we're about to destroy.
-    push {{r4-r7, lr}}
-    .cfi_adjust_cfa_offset 20
-    .cfi_offset r4, -20
-    .cfi_offset r5, -16
-    .cfi_offset r6, -12
-    .cfi_offset r7, -8
-    .cfi_offset lr, -4
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7, r11, lr}}
+            .cfi_adjust_cfa_offset 24
+            .cfi_offset r4, -24
+            .cfi_offset r5, -20
+            .cfi_offset r6, -16
+            .cfi_offset r7, -12
+            .cfi_offset r11, -8
+            .cfi_offset lr, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -24
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Move arguments 0-3 into the correct registers.
-    mov r4, r0
-    mov r5, r1
-    mov r6, r2
-    mov r7, r3
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
 
-    svc #0
+            svc #0
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r7, pc}}
+            @ Restore the registers.
+            pop {{r4-r7, r11, pc}}
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::Reply as u32,
-);
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Reply as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_reply_stub
+        .globl sys_reply_stub
+        .type sys_reply_stub,function
+        sys_reply_stub:
+            .cfi_startproc
+
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7, lr}}
+            .cfi_adjust_cfa_offset 20
+            .cfi_offset r4, -20
+            .cfi_offset r5, -16
+            .cfi_offset r6, -12
+            .cfi_offset r7, -8
+            .cfi_offset lr, -4
+
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -24
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+
+            svc #0
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r7, pc}}
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Reply as u32,
+        );
+    }
+}
 
 #[inline(always)]
 pub fn sys_reply_fault(
@@ -485,46 +653,90 @@ pub fn sys_reply_fault(
     }
 }
 
-global_asm!("
-.section .text.sys_reply_fault_stub
-.globl sys_reply_fault_stub
-.type sys_reply_fault_stub,function
-sys_reply_fault_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_reply_fault_stub
+        .globl sys_reply_fault_stub
+        .type sys_reply_fault_stub,function
+        sys_reply_fault_stub:
+            .cfi_startproc
 
-    @ Stash the register values we're about to destroy.
-    push {{r4-r5}}
-    .cfi_adjust_cfa_offset 8
-    .cfi_offset r4, -8
-    .cfi_offset r5, -4
+            @ Stash the register values we're about to destroy.
+            push {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset 12
+            .cfi_offset r4, -12
+            .cfi_offset r5, -8
+            .cfi_offset, r11, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -12
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments 0-1 into the correct registers.
+            mov r4, r0
+            mov r5, r1
 
-    @ Move arguments 0-1 into the correct registers.
-    mov r4, r0
-    mov r5, r1
+            svc #0
 
-    svc #0
+            @ Restore the registers.
+            pop {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset -12
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r5}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::ReplyFault as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_reply_fault_stub
+        .globl sys_reply_fault_stub
+        .type sys_reply_fault_stub,function
+        sys_reply_fault_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::ReplyFault as u32,
-);
+            @ Stash the register values we're about to destroy.
+            push {{r4-r5}}
+            .cfi_adjust_cfa_offset 8
+            .cfi_offset r4, -8
+            .cfi_offset r5, -4
+
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -12
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments 0-1 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+
+            svc #0
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r5}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::ReplyFault as u32,
+        );
+    }
+}
 
 pub fn sys_panic(msg: &[u8]) -> ! {
     unsafe {
@@ -540,7 +752,7 @@ cfg_if::cfg_if! {
         .type sys_panic_stub,function
         sys_panic_stub:
             .cfi_startproc
-        
+
             @ Stash the register values we're about to destroy, to make reconstructing the
             @ task's state at panic easier. (Since the task won't resume, these will never
             @ get popped.)
@@ -550,12 +762,12 @@ cfg_if::cfg_if! {
             .cfi_offset r5, -12
             .cfi_offset r11, -8
             .cfi_offset lr, -4
-        
+
             @ Move arguments into place.
             mov r4, r0
             mov r5, r1
             mov r11, {sysnum}
-        
+
             svc #0
             udf 0xad
             .cfi_endproc
@@ -569,7 +781,7 @@ cfg_if::cfg_if! {
         .type sys_panic_stub,function
         sys_panic_stub:
             .cfi_startproc
-        
+
             @ Stash the register values we're about to destroy, to make reconstructing the
             @ task's state at panic easier. (Since the task won't resume, these will never
             @ get popped.)
@@ -584,7 +796,7 @@ cfg_if::cfg_if! {
             push {{r4}}
             .cfi_offset r11, -20
             .cfi_adjust_cfa_offset 4
-       
+
             @ Materialize the sysnum constant.
             eors r4, r4
             adds r4, #{sysnum}
@@ -592,7 +804,7 @@ cfg_if::cfg_if! {
             @ Move arguments into place.
             mov r4, r0
             mov r5, r1
-        
+
             svc #0
             udf 0xad
             .cfi_endproc
@@ -604,51 +816,98 @@ cfg_if::cfg_if! {
     }
 }
 
-global_asm!("
-.section .text.sys_set_timer_stub
-.globl sys_set_timer_stub
-.type sys_set_timer_stub,function
-sys_set_timer_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_set_timer_stub
+        .globl sys_set_timer_stub
+        .type sys_set_timer_stub,function
+        sys_set_timer_stub:
+            .cfi_startproc
 
-    @ Stash the register values we're about to destroy.
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -16
-    .cfi_offset r5, -12
-    .cfi_offset r6, -8
-    .cfi_offset r7, -4
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7, r11}}
+            .cfi_adjust_cfa_offset 20
+            .cfi_offset r4, -20
+            .cfi_offset r5, -16
+            .cfi_offset r6, -12
+            .cfi_offset r7, -8
+            .cfi_offset r11, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -20
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
 
-    @ Move arguments 0-3 into the correct registers.
-    mov r4, r0
-    mov r5, r1
-    mov r6, r2
-    mov r7, r3
+            svc #0
 
-    svc #0
+            @ Restore the registers.
+            pop {{r4-r7, r11}}
+            .cfi_adjust_cfa_offset -20
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r7}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::SetTimer as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_set_timer_stub
+        .globl sys_set_timer_stub
+        .type sys_set_timer_stub,function
+        sys_set_timer_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::SetTimer as u32,
-);
+            @ Stash the register values we're about to destroy.
+            push {{r4-r7}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -16
+            .cfi_offset r5, -12
+            .cfi_offset r6, -8
+            .cfi_offset r7, -4
 
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -20
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments 0-3 into the correct registers.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+
+            svc #0
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r7}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::SetTimer as u32,
+        );
+    }
+}
 pub fn sys_set_timer(
     deadline: Option<u64>,
     notifications: u32,
@@ -697,57 +956,103 @@ pub fn sys_get_timer() -> TimerSettings {
 }
 
 
-global_asm!("
-.section .text.sys_get_timer_stub
-.globl sys_get_timer_stub
-.type sys_get_timer_stub,function
-sys_get_timer_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_get_timer_stub
+        .globl sys_get_timer_stub
+        .type sys_get_timer_stub,function
+        sys_get_timer_stub:
+            .cfi_startproc
 
-    @ Stash the register values that will be destroyed by the returned data.
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -16
-    .cfi_offset r5, -12
-    .cfi_offset r6, -8
-    .cfi_offset r7, -4
+            @ Stash the register values that will be destroyed by the returned data.
+            push {{r4-r9, r11}}
+            .cfi_adjust_cfa_offset 28
+            .cfi_offset r4, -28
+            .cfi_offset r5, -24
+            .cfi_offset r6, -20
+            .cfi_offset r7, -16
+            .cfi_offset r8, -12
+            .cfi_offset r9, -8
+            .cfi_offset r11, -4
 
-    mov r4, r8
-    mov r5, r9
-    mov r6, r11
-    push {{r4-r6}}
-    .cfi_adjust_cfa_offset 12
-    .cfi_offset r8, -28
-    .cfi_offset r9, -24
-    .cfi_offset r11, -20
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            svc #0
 
-    svc #0
+            @ Copy outputs into the return struct.
+            stm r0!, {{r4-r9}}
 
-    @ Copy outputs into the return struct.
-    stm r0!, {{r4-r7}}
-    mov r4, r8
-    mov r5, r9
-    stm r0!, {{r4-r5}}
+            @ Restore the registers.
+            pop {{r4-r9, r11}}
+            .cfi_adjust_cfa_offset -28
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4-r6}}
-    .cfi_adjust_cfa_offset -12
-    mov r8, r4
-    mov r9, r5
-    mov r11, r6
-    pop {{r4-r7}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::GetTimer as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_get_timer_stub
+        .globl sys_get_timer_stub
+        .type sys_get_timer_stub,function
+        sys_get_timer_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::GetTimer as u32,
-);
+            @ Stash the register values that will be destroyed by the returned data.
+            push {{r4-r7}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -16
+            .cfi_offset r5, -12
+            .cfi_offset r6, -8
+            .cfi_offset r7, -4
 
+            mov r4, r8
+            mov r5, r9
+            mov r6, r11
+            push {{r4-r6}}
+            .cfi_adjust_cfa_offset 12
+            .cfi_offset r8, -28
+            .cfi_offset r9, -24
+            .cfi_offset r11, -20
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            svc #0
+
+            @ Copy outputs into the return struct.
+            stm r0!, {{r4-r7}}
+            mov r4, r8
+            mov r5, r9
+            stm r0!, {{r4-r5}}
+
+            @ Restore the registers.
+            pop {{r4-r6}}
+            .cfi_adjust_cfa_offset -12
+            mov r8, r4
+            mov r9, r5
+            mov r11, r6
+            pop {{r4-r7}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::GetTimer as u32,
+        );
+    }
+}
 #[inline(always)]
 pub fn sys_enable_irq(bits: u32) {
     unsafe {
@@ -755,46 +1060,90 @@ pub fn sys_enable_irq(bits: u32) {
     }
 }
 
-global_asm!("
-.section .text.sys_irq_control_stub
-.globl sys_irq_control_stub
-.type sys_irq_control_stub,function
-sys_irq_control_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_irq_control_stub
+        .globl sys_irq_control_stub
+        .type sys_irq_control_stub,function
+        sys_irq_control_stub:
+            .cfi_startproc
 
-    @ Stash the register values that we'll use to carry arguments.
-    push {{r4-r5}}
-    .cfi_adjust_cfa_offset 8
-    .cfi_offset r4, -8
-    .cfi_offset r5, -4
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset 12
+            .cfi_offset r4, -12
+            .cfi_offset r5, -8
+            .cfi_offset r11, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -12
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
 
-    @ Move arguments into place.
-    mov r4, r0
-    mov r5, r1
+            svc #0
 
-    svc #0
+            @ Restore the registers.
+            pop {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset -12
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r5}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::IrqControl as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_irq_control_stub
+        .globl sys_irq_control_stub
+        .type sys_irq_control_stub,function
+        sys_irq_control_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::IrqControl as u32,
-);
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r5}}
+            .cfi_adjust_cfa_offset 8
+            .cfi_offset r4, -8
+            .cfi_offset r5, -4
+
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -12
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
+
+            svc #0
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r5}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::IrqControl as u32,
+        );
+    }
+}
 
 #[repr(C)]
 struct AbiBorrowInfo {
@@ -875,60 +1224,114 @@ pub fn sys_borrow_info(
 }
 
 
-global_asm!("
-.section .text.sys_borrow_read_stub
-.globl sys_borrow_read_stub
-.type sys_borrow_read_stub,function
-sys_borrow_read_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_borrow_read_stub
+        .globl sys_borrow_read_stub
+        .type sys_borrow_read_stub,function
+        sys_borrow_read_stub:
+            .cfi_startproc
 
-    @ Stash the register values that we'll use to carry arguments.
-    push {{r4-r7}}
-    .cfi_adjust_cfa_offset 16
-    .cfi_offset r4, -16
-    .cfi_offset r5, -12
-    .cfi_offset r6, -8
-    .cfi_offset r7, -4
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r8, r11}}
+            .cfi_adjust_cfa_offset 24
+            .cfi_offset r4, -24
+            .cfi_offset r5, -20
+            .cfi_offset r6, -16
+            .cfi_offset r7, -12
+            .cfi_offset r8, -8
+            .cfi_offset r11, -4
 
-    mov r4, r8
-    mov r5, r11
-    push {{r4-r5}}
-    .cfi_adjust_cfa_offset 8
-    .cfi_offset r8, -24
-    .cfi_offset r11, -20
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+            ldr r8, [sp, #(6 * 4)]
 
-    @ Move arguments into place.
-    ldr r4, [sp, #(6 * 4)]
-    mov r8, r4
+            svc #0
 
-    mov r4, r0
-    mov r5, r1
-    mov r6, r2
-    mov r7, r3
+            @ Copy outputs into place.
+            mov r0, r4
+            mov r1, r5
 
-    svc #0
+            @ Restore the registers.
+            pop {{r4-r8, r11}}
+            .cfi_adjust_cfa_offset -24
+            bx lr
 
-    @ Copy outputs into place.
-    mov r0, r4
-    mov r1, r5
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::BorrowRead as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_borrow_read_stub
+        .globl sys_borrow_read_stub
+        .type sys_borrow_read_stub,function
+        sys_borrow_read_stub:
+            .cfi_startproc
 
-    @ Restore the registers.
-    pop {{r4-r5}}
-    .cfi_adjust_cfa_offset -8
-    mov r8, r4
-    mov r11, r5
-    pop {{r4-r7}}
-    bx lr
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r7}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -16
+            .cfi_offset r5, -12
+            .cfi_offset r6, -8
+            .cfi_offset r7, -4
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::BorrowRead as u32,
-);
+            mov r4, r8
+            mov r5, r11
+            push {{r4-r5}}
+            .cfi_adjust_cfa_offset 8
+            .cfi_offset r8, -24
+            .cfi_offset r11, -20
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments into place.
+            ldr r4, [sp, #(6 * 4)]
+            mov r8, r4
+
+            mov r4, r0
+            mov r5, r1
+            mov r6, r2
+            mov r7, r3
+
+            svc #0
+
+            @ Copy outputs into place.
+            mov r0, r4
+            mov r1, r5
+
+            @ Restore the registers.
+            pop {{r4-r5}}
+            .cfi_adjust_cfa_offset -8
+            mov r8, r4
+            mov r11, r5
+            pop {{r4-r7}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::BorrowRead as u32,
+        );
+    }
+}
 
 global_asm!("
 .section .text.sys_borrow_write_stub
@@ -985,51 +1388,100 @@ sys_borrow_write_stub:
     sysnum = const Sysnum::BorrowWrite as u32,
 );
 
-global_asm!("
-.section .text.sys_borrow_info_stub
-.globl sys_borrow_info_stub
-.type sys_borrow_info_stub,function
-sys_borrow_info_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_borrow_info_stub
+        .globl sys_borrow_info_stub
+        .type sys_borrow_info_stub,function
+        sys_borrow_info_stub:
+            .cfi_startproc
 
-    @ Stash the register values that we'll use to carry arguments and receive
-    @ results.
-    push {{r4-r6}}
-    .cfi_adjust_cfa_offset 12
-    .cfi_offset r4, -12
-    .cfi_offset r5, -8
-    .cfi_offset r6, -4
+            @ Stash the register values that we'll use to carry arguments and receive
+            @ results.
+            push {{r4-r6, r11}}
+            .cfi_adjust_cfa_offset 16
+            .cfi_offset r4, -16
+            .cfi_offset r5, -12
+            .cfi_offset r6, -8
+            .cfi_offset r11, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -16
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
 
-    @ Move arguments into place.
-    mov r4, r0
-    mov r5, r1
+            svc #0
 
-    svc #0
+            @ Copy outputs into place.
+            stm r2!, {{r4, r5, r6}}
 
-    @ Copy outputs into place.
-    stm r2!, {{r4, r5, r6}}
+            @ Restore the registers.
+            pop {{r4-r6, r11}}
+            .cfi_adjust_cfa_offset -16
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r6}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::BorrowInfo as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_borrow_info_stub
+        .globl sys_borrow_info_stub
+        .type sys_borrow_info_stub,function
+        sys_borrow_info_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::BorrowInfo as u32,
-);
+            @ Stash the register values that we'll use to carry arguments and receive
+            @ results.
+            push {{r4-r6}}
+            .cfi_adjust_cfa_offset 12
+            .cfi_offset r4, -12
+            .cfi_offset r5, -8
+            .cfi_offset r6, -4
+
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -16
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
+
+            svc #0
+
+            @ Copy outputs into place.
+            stm r2!, {{r4, r5, r6}}
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r6}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::BorrowInfo as u32,
+        );
+    }
+}
 
 pub fn sys_post(task: TaskId, notifications: u32) -> Result<(), TaskDeath> {
     let rc = unsafe {
@@ -1046,50 +1498,96 @@ pub fn sys_post(task: TaskId, notifications: u32) -> Result<(), TaskDeath> {
     }
 }
 
-global_asm!("
-.section .text.sys_post_stub
-.globl sys_post_stub
-.type sys_post_stub,function
-sys_post_stub:
-    .cfi_startproc
+cfg_if::cfg_if! {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
+        global_asm!("
+        .section .text.sys_post_stub
+        .globl sys_post_stub
+        .type sys_post_stub,function
+        sys_post_stub:
+            .cfi_startproc
 
-    @ Stash the register values that we'll use to carry arguments.
-    push {{r4-r5}}
-    .cfi_adjust_cfa_offset 8
-    .cfi_offset r4, -8
-    .cfi_offset r5, -4
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset 12
+            .cfi_offset r4, -12
+            .cfi_offset r5, -8
+            .cfi_offset r11, -4
 
-    mov r4, r11
-    push {{r4}}
-    .cfi_adjust_cfa_offset 4
-    .cfi_offset r11, -12
+            @ Materialize the sysnum constant.
+            mov r11, #{sysnum}
 
-    @ Materialize the sysnum constant.
-    eors r4, r4
-    adds r4, #{sysnum}
-    mov r11, r4
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
 
-    @ Move arguments into place.
-    mov r4, r0
-    mov r5, r1
+            svc #0
 
-    svc #0
+            @ Copy outputs into place.
+            mov r0, r4
 
-    @ Copy outputs into place.
-    mov r0, r4
+            @ Restore the registers.
+            pop {{r4-r5, r11}}
+            .cfi_adjust_cfa_offset -12
+            bx lr
 
-    @ Restore the registers.
-    pop {{r4}}
-    .cfi_adjust_cfa_offset -4
-    mov r11, r4
-    pop {{r4-r5}}
-    bx lr
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Post as u32,
+        );
+    } else {
+        global_asm!("
+        .section .text.sys_post_stub
+        .globl sys_post_stub
+        .type sys_post_stub,function
+        sys_post_stub:
+            .cfi_startproc
 
-    .cfi_endproc
-",
-    sysnum = const Sysnum::Post as u32,
-);
+            @ Stash the register values that we'll use to carry arguments.
+            push {{r4-r5}}
+            .cfi_adjust_cfa_offset 8
+            .cfi_offset r4, -8
+            .cfi_offset r5, -4
 
+            mov r4, r11
+            push {{r4}}
+            .cfi_adjust_cfa_offset 4
+            .cfi_offset r11, -12
+
+            @ Materialize the sysnum constant.
+            eors r4, r4
+            adds r4, #{sysnum}
+            mov r11, r4
+
+            @ Move arguments into place.
+            mov r4, r0
+            mov r5, r1
+
+            svc #0
+
+            @ Copy outputs into place.
+            mov r0, r4
+
+            @ Restore the registers.
+            pop {{r4}}
+            .cfi_adjust_cfa_offset -4
+            mov r11, r4
+            pop {{r4-r5}}
+            bx lr
+
+            .cfi_endproc
+        ",
+            sysnum = const Sysnum::Post as u32,
+        );
+    }
+}
 extern "C" {
     /// Low-level send syscall stub.
     ///
@@ -1229,9 +1727,9 @@ cfg_if::cfg_if! {
 
         1:  cmp r2, r0                  @ done yet?
             bne 2b                      @ if not, repeat.
-        
+
             @ Zero BSS section.
-        
+
             ldr r0, =__ebss             @ upper bound of zeroed region
             ldr r1, =__sbss             @ lower bound
             movs r2, #0                 @ the all-important constant
@@ -1241,12 +1739,12 @@ cfg_if::cfg_if! {
         2:  stm r1!, {{r2}}             @ zero one word and increment pointer
         1:  cmp r1, r0                  @ done yet?
             bne 2b                      @ no? continue.
-        
+
             @ Now, to the user entry point. We call it in case it
             @ returns. (It's not supposed to.) We reference it through
             @ a sym operand because it's a Rust func and may be mangled.
             bl {main}
-        
+
             @ Should main return... kill it.
             udf 0xad
             ",
@@ -1260,7 +1758,7 @@ cfg_if::cfg_if! {
             @ Copy data initialization image into data section.
             @ Note: this assumes that both source and destination are 32-bit
             @ aligned and padded to 4-byte boundary.
-        
+
             movw r0, #:lower16:__edata  @ upper bound in r0
             movt r0, #:upper16:__edata
 
@@ -1269,37 +1767,37 @@ cfg_if::cfg_if! {
 
             movw r2, #:lower16:__sdata  @ dest in r2
             movt r2, #:upper16:__sdata
-        
+
             b 1f                        @ check for zero-sized data
-        
+
         2:  ldr r3, [r1], #4            @ read and advance source
             str r3, [r2], #4            @ write and advance dest
-        
+
         1:  cmp r2, r0                  @ has dest reached the upper bound?
             bne 2b                      @ if not, repeat
-        
+
             @ Zero BSS section.
-        
+
             movw r0, #:lower16:__ebss   @ upper bound in r0
             movt r0, #:upper16:__ebss
-        
+
             movw r1, #:lower16:__sbss   @ base in r1
             movt r1, #:upper16:__sbss
-        
+
             movs r2, #0                 @ materialize a zero
-        
+
             b 1f                        @ check for zero-sized BSS
-        
+
         2:  str r2, [r1], #4            @ zero one word and advance
-        
+
         1:  cmp r1, r0                  @ has base reached bound?
             bne 2b                      @ if not, repeat
-        
+
             @ Now, to the user entry point. We call it in case it
             @ returns. (It's not supposed to.) We reference it through
             @ a sym operand because it's a Rust func and may be mangled.
             bl {main}
-        
+
             @ Should main return... kill it.
             udf 0xad
             ",
