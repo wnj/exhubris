@@ -5,7 +5,11 @@ applications that live _outside_ the main Hubris repo. (The name is bad Latin
 for "out of Hubris," which is where I want the applications to go, and also an
 abbreviation for "external Hubris.")
 
-**Current Status:** towering stack of hacks.
+**If you would like to see what an exhubris-built application looks like in
+practice, I'm maintaining a demo repository next to this one:
+https://github.com/cbiffle/exhubris-demo/**
+
+**Current Status:** starting to kinda work.
 
 ## Why this is necessary
 
