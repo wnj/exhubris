@@ -1,0 +1,5 @@
+# Hubris? In my keyboard?
+
+It's more likely than you think.
+
+This is a basic USB HID keyboard implementation built with Hubris.

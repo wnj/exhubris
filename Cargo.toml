@@ -7,6 +7,8 @@ members = [
     "drv/*",
     "tools/build",
     "tools/hubake",
+
+    "app/kbd/keyboard",
 ]
 
 [workspace.dependencies]
