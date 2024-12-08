@@ -6,7 +6,7 @@
 use core::mem::MaybeUninit;
 
 use stm32_metapac::gpio::vals::{Idr, Moder, Odr, Pupdr};
-use userlib::{Message, ReplyFaultReason};
+use userlib::Message;
 
 #[export_name = "main"]
 fn main() -> ! {

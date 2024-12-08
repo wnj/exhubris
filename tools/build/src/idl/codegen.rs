@@ -54,9 +54,9 @@ pub fn generate_server(
         impl<'a, T> idyll_runtime::Server<#op_enum_name> for (core::marker::PhantomData<#op_enum_name>, &'a mut T)
             where T: #trait_name
         {
-            fn dispatch_op(&mut self, op: #op_enum_name, msg: &Message<'_>) -> Result<(), ReplyFaultReason> {
+            fn dispatch_op(&mut self, op: #op_enum_name, msg: &userlib::Message<'_>) -> Result<(), userlib::ReplyFaultReason> {
                 let Ok(msg_data) = &msg.data else {
-                    return Err(ReplyFaultReason::BadMessageSize);
+                    return Err(userlib::ReplyFaultReason::BadMessageSize);
                 };
                 match op {
                     #(#dispatch_cases)*
@@ -479,7 +479,7 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
         };
         Ok(quote! {
             idyll_runtime::Leased::<#att, #ty>::new(msg.sender, #i)
-                .ok_or(ReplyFaultReason::BadLeases)?
+                .ok_or(userlib::ReplyFaultReason::BadLeases)?
         })
     }).collect::<miette::Result<Vec<_>>>()?;
 
@@ -509,7 +509,7 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
     } else {
         Some(quote! {
             let args = hubpack::deserialize::<(#(#argtypes,)*)>(msg_data)
-                .map_err(|_| ReplyFaultReason::BadMessageContents)?
+                .map_err(|_| userlib::ReplyFaultReason::BadMessageContents)?
                 .0;
         })
     };
