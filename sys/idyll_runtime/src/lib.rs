@@ -19,7 +19,7 @@ pub trait ServerOp: TryFrom<u16> {
 
 #[doc(hidden)]
 pub const fn const_max(sizes: &[usize]) -> usize {
-    let mut max = sizes[0];
+    let mut max = if sizes.is_empty() { 0 } else { sizes[0] };
     let mut i = 1;
     while i < sizes.len() {
         if sizes[i] > max {
