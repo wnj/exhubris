@@ -60,6 +60,14 @@ task "scanner" {
     notification "timer"
     config {
         keyboard "keyboard#scan_event_ready"
+        rows {
+            - "A0"
+            - "A1"
+        }
+        cols {
+            - "B0"
+            - "B1"
+        }
     }
 }
 

@@ -26,13 +26,36 @@ fn main() {
         panic!("keyboard signal name references unknown notification {not_name}");
     };
 
-    let mut config_out = std::fs::File::create(outpath.join("config.rs")).unwrap();
-    writeln!(config_out, "const KEYBOARD_TASK_INDEX: u16 = {};", task_info.get_index()).unwrap();
-    writeln!(config_out, "const KEYBOARD_NOTIFICATION_MASK: u32 = {};", mask).unwrap();
-    drop(config_out);
+    let mut f = std::fs::File::create(outpath.join("config.rs")).unwrap();
+    writeln!(f, "pub(crate) mod config {{").unwrap();
+    writeln!(f, "pub const KEYBOARD_TASK_INDEX: u16 = {};", task_info.get_index()).unwrap();
+    writeln!(f, "pub const KEYBOARD_NOTIFICATION_MASK: u32 = {};", mask).unwrap();
+
+    writeln!(f, "use drv_stm32l4_sys_api::Port;").unwrap();
+
+    for (array, src) in [("ROWS", &config.rows), ("COLS", &config.cols)] {
+        let n = src.len();
+        writeln!(f, "pub const {array}: [(Port, u8); {n}] = [").unwrap();
+        for pinname in src {
+            let (port, pin) = parse_pin_name(pinname);
+            writeln!(f, "    (Port::{port}, {pin}),").unwrap();
+        }
+        writeln!(f, "];").unwrap();
+    }
+
+    writeln!(f, "}}").unwrap();
+    drop(f);
 }
 
 #[derive(Deserialize)]
 struct Config {
     keyboard: String,
+    rows: Vec<String>,
+    cols: Vec<String>,
+}
+
+fn parse_pin_name(name: &str) -> (&str, u8) {
+    let (port, pin) = name.split_at(1);
+
+    (port, pin.parse().unwrap())
 }

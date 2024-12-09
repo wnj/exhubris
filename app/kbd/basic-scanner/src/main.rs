@@ -1,4 +1,15 @@
 //! Basic GPIO keyboard matrix scanner.
+//!
+//! This scans a rectangular matrix by setting one "row" pin high at a time,
+//! waiting for a bit, and then reading the state of all "column" pins. Any
+//! changes are queued up for retrieval by another task.
+//!
+//! Currently, this uses the kernel general-purpose timer, which means that (by
+//! default) it's restricted to millisecond precision. This limits the maximum
+//! scan rate to `1000 / num_rows` Hz, which is slow by modern standards. This
+//! could be fixed by enlisting a hardware timer to generate faster interrupts,
+//! or by using DMA to perform the scan, both of which are currently out of
+//! scope for this _basic_ scanner implementation.
 
 #![no_std]
 #![no_main]
@@ -14,28 +25,15 @@ const INTERVAL: u64 = 1; // millisecond
 
 const QUEUE_DEPTH: usize = 16;
 
-const ROWS: usize = 2;
-const COLS: usize = 2;
-
-const ROW_OUTS: [(Port, u8); ROWS] = [
-    (Port::A, 0),
-    (Port::A, 1),
-];
-
-const COL_INS: [(Port, u8); COLS] = [
-    (Port::B, 0),
-    (Port::B, 1),
-];
-
 #[export_name = "main"]
 fn main() -> ! {
     let sys = Sys::from(SLOTS.sys);
 
-    for (port, pin) in ROW_OUTS {
+    for (port, pin) in config::ROWS {
         sys.set_pin_output(port, pin);
     }
 
-    for (port, pin) in COL_INS {
+    for (port, pin) in config::COLS {
         sys.set_pin_pull(port, pin, Some(Pull::Down));
         sys.set_pin_input(port, pin);
     }
@@ -49,10 +47,10 @@ fn main() -> ! {
     let mut server = Server {
         next_time,
         scan_row: 0,
-        keys_down: [[false; COLS]; ROWS],
+        keys_down: [[false; config::COLS.len()]; config::ROWS.len()],
         sys,
         queue: heapless::Deque::new(),
-        keyboard: TaskId::gen0(KEYBOARD_TASK_INDEX),
+        keyboard: TaskId::gen0(config::KEYBOARD_TASK_INDEX),
     };
     loop {
         idyll_runtime::dispatch_or_event(
@@ -66,7 +64,7 @@ fn main() -> ! {
 struct Server {
     next_time: u64,
     scan_row: usize,
-    keys_down: [[bool; COLS]; ROWS],
+    keys_down: [[bool; config::COLS.len()]; config::ROWS.len()],
 
     sys: Sys,
 
@@ -98,7 +96,7 @@ impl NotificationHandler for Server {
                 // Read column inputs
                 let downs = &mut self.keys_down[self.scan_row];
                 let mut poke_keyboard = false;
-                for (i, (port, pin)) in COL_INS.into_iter().enumerate() {
+                for (i, (port, pin)) in config::COLS.into_iter().enumerate() {
                     let down_now = self.sys.is_pin_high(port, pin);
                     let change = match (downs[i], down_now) {
                         (false, true) => Some(KeyState::Down),
@@ -113,7 +111,7 @@ impl NotificationHandler for Server {
                 }
                 if poke_keyboard {
                     loop {
-                        match userlib::sys_post(self.keyboard, KEYBOARD_NOTIFICATION_MASK) {
+                        match userlib::sys_post(self.keyboard, config::KEYBOARD_NOTIFICATION_MASK) {
                             Ok(()) => break,
                             Err(dead) => {
                                 // Update and try again. Since we're higher priority, this
@@ -126,9 +124,9 @@ impl NotificationHandler for Server {
                 }
 
                 // Turn off this row and turn on the next.
-                self.sys.set_pin_low(ROW_OUTS[self.scan_row].0, ROW_OUTS[self.scan_row].1);
-                self.scan_row = (self.scan_row + 1) % ROWS;
-                self.sys.set_pin_high(ROW_OUTS[self.scan_row].0, ROW_OUTS[self.scan_row].1);
+                self.sys.set_pin_low(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
+                self.scan_row = (self.scan_row + 1) % config::ROWS.len();
+                self.sys.set_pin_high(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
 
                 // Bump our timer to the next deadline.
                 self.next_time += INTERVAL;
