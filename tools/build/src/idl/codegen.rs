@@ -251,13 +251,13 @@ pub fn generate_client_method(
 
 pub fn generate_enum(
     name: &str,
-    enum_case_def: &EnumDef,
+    def: &EnumDef,
 ) -> miette::Result<proc_macro2::TokenStream> {
-    let cases = enum_case_def.cases.iter().map(|(name, def)| {
+    let cases = def.cases.iter().map(|(name, def)| {
         generate_enum_case(name, def)
     }).collect::<miette::Result<Vec<_>>>()?;
     let name = format_ident!("{name}");
-    let from_impl = if let Some(death_case) = &enum_case_def.task_death_case {
+    let from_impl = if let Some(death_case) = &def.task_death_case {
         let death = format_ident!("{death_case}");
         Some(quote! {
             impl idyll_runtime::FromTaskDeath for #name {
@@ -269,8 +269,11 @@ pub fn generate_enum(
     } else {
         None
     };
+    let extra_derives = def.rust_derive.iter().map(|trt| {
+        format_ident!("{trt}")
+    }).collect::<Vec<_>>();
     Ok(quote! {
-        #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize)]
+        #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize #(,#extra_derives)*)]
         pub enum #name {
             #(#cases,)*
         }
@@ -323,9 +326,12 @@ pub fn generate_struct(
         let name = format_ident!("{name}");
         Ok(quote! { pub #name: #ty })
     }).collect::<miette::Result<Vec<_>>>()?;
+    let extra_derives = def.rust_derive.iter().map(|trt| {
+        format_ident!("{trt}")
+    }).collect::<Vec<_>>();
     let name = format_ident!("{name}");
     Ok(quote! {
-        #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize)]
+        #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize #(,#extra_derives)*)]
         pub struct #name {
             #(#fields,)*
         }

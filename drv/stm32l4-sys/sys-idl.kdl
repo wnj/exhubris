@@ -13,6 +13,8 @@ enum "Port" {
     case "D"
     // GPIOE, F, G not implemented on current target parts
     case "H"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 enum "Function" {
@@ -35,6 +37,8 @@ enum "Function" {
     case "AF13"
     case "AF14"
     case "AF15"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 enum "Pull" {
@@ -42,6 +46,8 @@ enum "Pull" {
 
     case "Up"
     case "Down"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 // Operations:
@@ -148,4 +154,6 @@ enum "PeripheralName" {
 
     case "Crs" 0b011_11000 // APB1ENR1 bit 24
     case "UsbFs" 0b011_11010 // APB1ENR1 bit 26
+
+    rust-derive "Copy" "Clone" "Debug"
 }

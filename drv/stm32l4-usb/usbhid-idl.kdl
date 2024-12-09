@@ -30,6 +30,8 @@ enum "EnqueueError" {
     on-task-death "Died"
 
     case "Died"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 enum "UsbEvent" {
@@ -39,4 +41,6 @@ enum "UsbEvent" {
         field "length" "u16"
     }
     case "ReportNeeded"
+
+    rust-derive "Copy" "Clone" "Debug"
 }

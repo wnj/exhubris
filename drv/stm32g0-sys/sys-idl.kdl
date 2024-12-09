@@ -13,6 +13,8 @@ enum "Port" {
     case "D"
     // GPIOE not implemented on current target parts
     case "F"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 enum "Function" {
@@ -26,6 +28,8 @@ enum "Function" {
     case "AF5"
     case "AF6"
     case "AF7"
+
+    rust-derive "Copy" "Clone" "Debug"
 }
 
 // Operations:
@@ -92,4 +96,6 @@ enum "PeripheralName" {
     doc "An enumeration of all RCC-controlled peripherals on the chip."
 
     case "Usart2" 0b10_10001
+
+    rust-derive "Copy" "Clone" "Debug"
 }

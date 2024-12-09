@@ -1,6 +1,6 @@
 pub mod codegen;
 
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet}, path::Path, sync::Arc};
 
 use indexmap::IndexMap;
 use kdl::{KdlDocument, KdlNode};
@@ -172,6 +172,25 @@ fn parse_enum(
         def.cases.insert(name, case);
     }
 
+    for derive_child in get_children_named(doc, "rust-derive")? {
+        no_children(derive_child)?;
+        for e in derive_child.entries() {
+            if e.name().is_some() {
+                bail!(
+                    labels=[LabeledSpan::at(*e.span(), "has a property name")],
+                    "rust-derive arguments should be unnamed strings"
+                );
+            }
+            let Some(s) = e.value().as_string() else {
+                bail!(
+                    labels=[LabeledSpan::at(*e.span(), "not a string")],
+                    "rust-derive arguments should be unnamed strings"
+                );
+            };
+            def.rust_derive.insert(s.to_string());
+        }
+    }
+
     if let Some(death_case) = get_unique_optional_string_value(doc, "on-task-death")? {
         if !def.cases.contains_key(death_case.value()) {
             bail!(
@@ -208,6 +227,25 @@ fn parse_struct(
             );
         }
     }
+    for derive_child in get_children_named(doc, "rust-derive")? {
+        no_children(derive_child)?;
+        for e in derive_child.entries() {
+            if e.name().is_some() {
+                bail!(
+                    labels=[LabeledSpan::at(*e.span(), "has a property name")],
+                    "rust-derive arguments should be unnamed strings"
+                );
+            }
+            let Some(s) = e.value().as_string() else {
+                bail!(
+                    labels=[LabeledSpan::at(*e.span(), "not a string")],
+                    "rust-derive arguments should be unnamed strings"
+                );
+            };
+            def.rust_derive.insert(s.to_string());
+        }
+    }
+
     Ok(def)
 }
 
@@ -399,6 +437,7 @@ pub enum TypeDef {
 
 #[derive(Clone, Debug, Default)]
 pub struct EnumDef {
+    pub rust_derive: BTreeSet<String>,
     pub cases: IndexMap<String, EnumCaseDef>,
     pub task_death_case: Option<String>,
 }
@@ -418,6 +457,7 @@ pub enum EnumBodyDef {
 
 #[derive(Clone, Debug, Default)]
 pub struct StructDef {
+    pub rust_derive: BTreeSet<String>,
     pub fields: IndexMap<String, FieldDef>,
 }
 
