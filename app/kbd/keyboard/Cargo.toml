@@ -9,3 +9,4 @@ drv-stm32l4-usb-api = { version = "0.1.0", path = "../../../drv/stm32l4-usb-api"
 hubris-task-slots = { version = "0.1.0", path = "../../../sys/task-slots" }
 hubris-notifications = { path = "../../../sys/notifications" }
 userlib = {workspace = true, features = ["no-panic-messages"]}
+kbd-basic-scanner-api = { version = "0.1.0", path = "../basic-scanner-api" }

@@ -18,8 +18,8 @@
 //!
 //! The basic structure of any USB event is as follows:
 //!
-//! 1. The USB task posts our `EVENT_NEEDED` notification, finishes up whatever
-//!    it was doing, and goes to sleep.
+//! 1. The USB task posts our `USB_EVENT_READY` notification, finishes up
+//!    whatever it was doing, and goes to sleep.
 //! 2. We wake up and notice the notification. In response, we send a
 //!    `get_event` message to the USB task.
 //! 3. The USB task wakes up to receive the event and replies with a `UsbEvent`
@@ -93,6 +93,7 @@
 use hubris_task_slots::SLOTS;
 use drv_stm32l4_usb_api::{UsbHid, UsbEvent};
 use drv_stm32l4_sys_api::{Stm32L4Sys as Sys, Port, Pull};
+use kbd_basic_scanner_api::{KeyEvent, KeyState, Scanner};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Counter variable for visibility in the debugger.
@@ -103,38 +104,21 @@ static REPORTS: AtomicUsize = AtomicUsize::new(0);
 fn main() -> ! {
     // Make IPC clients for the two tasks we interact with.
     let usb = UsbHid::from(SLOTS.usbhid);
-    let sys = Sys::from(SLOTS.sys);
-
-    // Configure the two SCANOUT pins (A0 and A1) as outputs.
-    sys.set_pin_output(Port::A, 0);
-    sys.set_pin_output(Port::A, 1);
-
-    // Configure the two SCANIN pins (B0 and B1) as inputs, with pulldowns.
-    sys.set_pin_pull(Port::B, 0, Some(Pull::Down));
-    sys.set_pin_pull(Port::B, 1, Some(Pull::Down));
-    sys.set_pin_input(Port::B, 0);
-    sys.set_pin_input(Port::B, 1);
-
-    // Record the current time so we can manage our timer properly.
-    const INTERVAL: u64 = 1; // millisecond
-    let mut next_time = userlib::sys_get_timer().now + INTERVAL;
-    userlib::sys_set_timer(Some(next_time), hubris_notifications::TIMER);
+    let scanner = Scanner::from(SLOTS.scanner);
 
     // Local variables for matrix scanning and key state:
-    let mut scan_state = 0;
     let key_codes = [0x04, 0x05, 0x06, 0x07];
     let mut keys_down = [false; 4];
 
     // Event loop!
     loop {
-        // We are interested in these two events:
+        // We are interested in these events:
         let bits = userlib::sys_recv_notification(
-            hubris_notifications::EVENT_READY
-            | hubris_notifications::TIMER
+            hubris_notifications::USB_EVENT_READY
+            | hubris_notifications::SCAN_EVENT_READY
         );
 
-        // They can either or both occur at a time, so, check each in turn:
-        if bits & hubris_notifications::EVENT_READY != 0 {
+        if bits & hubris_notifications::USB_EVENT_READY != 0 {
             if let Some(event) = usb.get_event() {
                 let mut deliver_report = false;
                 match event {
@@ -176,34 +160,16 @@ fn main() -> ! {
             }
         }
 
-        if bits & hubris_notifications::TIMER != 0 {
-            // Advance key scanning, but only if time has really elapsed. (This
-            // check is me being pedantic: it's possible for other tasks to post
-            // our timer notification instead of the kernel doing it, so, I
-            // check the time.)
-            let now = userlib::sys_get_timer().now;
-            if now >= next_time {
-                // A real timer event!
-
-                match scan_state {
-                    0 => {
-                        keys_down[0] = sys.is_pin_high(Port::B, 0);
-                        keys_down[1] = sys.is_pin_high(Port::B, 1);
-                        sys.set_pin_low(Port::A, 1);
-                        sys.set_pin_high(Port::A, 0);
-                        scan_state = 1;
+        if bits & hubris_notifications::SCAN_EVENT_READY != 0 {
+            if let Some(event) = scanner.pop_event() {
+                if let Some(status) = keys_down.get_mut(usize::from(event.row * 2 + event.col)) {
+                    match event.state {
+                        KeyState::Down => *status = true,
+                        KeyState::Up => *status = false,
                     }
-                    _ => {
-                        keys_down[2] = sys.is_pin_high(Port::B, 0);
-                        keys_down[3] = sys.is_pin_high(Port::B, 1);
-                        sys.set_pin_low(Port::A, 0);
-                        sys.set_pin_high(Port::A, 1);
-                        scan_state = 0;
-                    }
+                } else {
+                    // out of range for our matrix
                 }
-                // Bump our timer to the next deadline.
-                next_time += INTERVAL;
-                userlib::sys_set_timer(Some(next_time), hubris_notifications::TIMER);
             }
         }
     }

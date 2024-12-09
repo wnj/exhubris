@@ -1,0 +1,19 @@
+[package]
+name = "kbd-basic-scanner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+drv-stm32l4-sys-api = { version = "0.1.0", path = "../../../drv/stm32l4-sys-api" }
+hubris-task-slots = { version = "0.1.0", path = "../../../sys/task-slots" }
+hubris-notifications = { path = "../../../sys/notifications" }
+userlib = {workspace = true, features = ["no-panic-messages"]}
+heapless = "0.8.0"
+hubpack = "0.1.2"
+idyll_runtime = { version = "0.1.0", path = "../../../sys/idyll_runtime" }
+serde = { version = "1.0.215", default-features = false, features = ["derive"] }
+
+[build-dependencies]
+hubris-build.workspace = true
+hubris-build-util = { version = "0.1.0", path = "../../../sys/build-util" }
+serde = { version = "1.0.215", features = ["derive"] }

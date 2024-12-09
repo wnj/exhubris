@@ -1,0 +1,32 @@
+// Keyboard scanner IPC interface.
+
+interface "scanner"
+
+// Operations:
+
+method "pop_event" {
+    doc "Collects one event from the pending queue, if there are any."
+
+    operation 0
+
+    result "Option<KeyEvent>"
+
+    // If the scanner task crashes, we just want clients to try again; they'll
+    // discover an empty queue and move on.
+    auto-retry
+}
+
+enum "KeyState" {
+    rust-derive "Copy" "Clone" "Debug"
+
+    case "Up"
+    case "Down"
+}
+
+struct "KeyEvent" {
+    rust-derive "Copy" "Clone" "Debug"
+
+    field "state" "KeyState"
+    field "row" "u8"
+    field "col" "u8"
+}

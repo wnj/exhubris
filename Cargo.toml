@@ -9,6 +9,8 @@ members = [
     "tools/hubake",
 
     "app/kbd/keyboard",
+    "app/kbd/basic-scanner",
+    "app/kbd/basic-scanner-api",
 ]
 
 [workspace.dependencies]

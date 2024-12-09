@@ -1,4 +1,11 @@
 // STM32L4-based keyboard app.
+//
+// The keyboard bits consist of three cooperating tasks.
+//
+// 1. usbhid manages the USB device hardware and protocol state machine.
+// 2. scanner manages the physical key matrix
+// 3. keyboard converts this into a logical key matrix and posts the results to
+//    usbhid.
 
 app "kbd"
 
@@ -41,54 +48,36 @@ task "usbhid" {
         irq "irq" "usb-irq"
     }
     config {
-        keyboard "keyboard#event_ready"
+        keyboard "keyboard#usb_event_ready"
+    }
+}
+
+task "scanner" {
+    workspace-crate "kbd-basic-scanner"
+    stack-size 360
+    priority 3
+    uses-task "sys"
+    notification "timer"
+    config {
+        keyboard "keyboard#scan_event_ready"
     }
 }
 
 task "keyboard" {
     workspace-crate "keyboard"
     stack-size 360
-    priority 3
+    priority 4
     uses-task "usbhid"
     uses-task "sys"
-    notification "event_ready"
+    uses-task "scanner"
     notification "timer"
-}
-
-/-task "l4blinky" {
-    workspace-crate "l4blinky"
-    stack-size 256
-    priority 3
-    features "chip-stm32l412kb"
-    uses-task "sys"
-    notification "timer"
-    config {
-        pins {
-            - "C15"
-            - "C14"
-        }
-    }
-}
-
-// IPC server.
-/-task "pong" {
-    workspace-crate "pong"
-    stack-size 160
-    priority 2
-}
-
-// IPC generator.
-/-task "ping" {
-    workspace-crate "ping"
-    stack-size 192
-    priority 3
-    uses-task "pong"
-    uses-task "sys"
+    notification "usb_event_ready"
+    notification "scan_event_ready"
 }
 
 // Idle task. This must be the lowest priority task.
 task "idle" {
     workspace-crate "idle"
     stack-size 128
-    priority 4
+    priority 5
 }
