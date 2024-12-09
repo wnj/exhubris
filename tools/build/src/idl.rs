@@ -56,6 +56,11 @@ fn parse_interface_internal(
         def.types.insert(name, TypeDef::Enum(e));
     }
 
+    for (name, node) in get_uniquely_named_children(doc, "struct")? {
+        let e = parse_struct(required_children(node)?)?;
+        def.types.insert(name, TypeDef::Struct(e));
+    }
+
     for (name, node) in get_uniquely_named_children(doc, "method")? {
         let m = parse_method(required_children(node)?)?;
         def.methods.insert(name, m);
@@ -175,6 +180,33 @@ fn parse_enum(
             )
         }
         def.task_death_case = Some(death_case.into_value());
+    }
+    Ok(def)
+}
+
+fn parse_struct(
+    doc: &KdlDocument,
+) -> miette::Result<StructDef> {
+
+    let mut def = StructDef::default();
+    for (name, node) in get_uniquely_named_children(doc, "field")? {
+        if node.entries().len() != 2 {
+            bail!(
+                labels=[LabeledSpan::at(*node.span(), "not two arguments")],
+                "wrong number of arguments for field in named struct"
+            );
+        }
+        let e_type = &node.entries()[1];
+        if let Some(s) = e_type.value().as_string() {
+            def.fields.insert(name, FieldDef {
+                type_: parse_value_type(s)?,
+            });
+        } else {
+            bail!(
+                labels=[LabeledSpan::at(*e_type.span(), "not a string")],
+                "struct field should have a string (type) argument"
+            );
+        }
     }
     Ok(def)
 }
@@ -384,7 +416,7 @@ pub enum EnumBodyDef {
     Struct(IndexMap<String, FieldDef>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct StructDef {
     pub fields: IndexMap<String, FieldDef>,
 }

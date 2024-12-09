@@ -4,7 +4,7 @@ use proc_macro2::Literal;
 use quote::{format_ident, quote};
 use syn::Ident;
 
-use super::{EnumBodyDef, EnumCaseDef, EnumDef, InterfaceDef, MethodDef, PrimType, TypeDef, ValueType};
+use super::{EnumBodyDef, EnumCaseDef, EnumDef, InterfaceDef, MethodDef, PrimType, StructDef, TypeDef, ValueType};
 
 pub fn format_code(ts: &proc_macro2::TokenStream) -> String {
     let ast = match syn::parse_file(&ts.to_string()) {
@@ -29,7 +29,7 @@ pub fn generate_server(
     let types = interface.types.iter().map(|(name, td)| {
         match td {
             TypeDef::Enum(e) => generate_enum(name, e),
-            TypeDef::Struct(_) => unimplemented!(),
+            TypeDef::Struct(s) => generate_struct(name, s),
         }
     }).collect::<miette::Result<Vec<_>>>()?;
     let (op_enum_name, op_enum) = generate_server_op_enum(interface)?;
@@ -79,7 +79,7 @@ pub fn generate_client(
     let types = interface.types.iter().map(|(name, td)| {
         match td {
             TypeDef::Enum(e) => generate_enum(name, e),
-            TypeDef::Struct(_) => unimplemented!(),
+            TypeDef::Struct(s) => generate_struct(name, s),
         }
     }).collect::<miette::Result<Vec<_>>>()?;
     Ok(quote::quote! {
@@ -312,6 +312,24 @@ pub fn generate_enum_body(
             Ok(quote! { { #(#fields)* } })
         }
     }
+}
+
+pub fn generate_struct(
+    name: &str,
+    def: &StructDef,
+) -> miette::Result<proc_macro2::TokenStream> {
+    let fields = def.fields.iter().map(|(name, fld)| {
+        let ty = generate_type(&fld.type_)?;
+        let name = format_ident!("{name}");
+        Ok(quote! { pub #name: #ty })
+    }).collect::<miette::Result<Vec<_>>>()?;
+    let name = format_ident!("{name}");
+    Ok(quote! {
+        #[derive(serde::Serialize, serde::Deserialize, hubpack::SerializedSize)]
+        pub struct #name {
+            #(#fields,)*
+        }
+    })
 }
 
 pub fn generate_type(
