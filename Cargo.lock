@@ -854,6 +854,7 @@ dependencies = [
  "strsim",
  "syn 2.0.90",
  "tempdir",
+ "thiserror 2.0.6",
  "toml 0.8.19",
  "zip",
 ]
