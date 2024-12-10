@@ -565,7 +565,6 @@ fn main() -> miette::Result<()> {
                 z.start_file("app.toml", opts).into_diagnostic()?;
 
                 let tasks_toml = app.tasks.iter().map(|(name, task)| {
-                    println!("{name}");
                     (name.clone(), hubris_build::bundle::TaskToml {
                         notifications: task.notifications.clone(),
                     })
@@ -658,9 +657,8 @@ fn main() -> miette::Result<()> {
             let base_addr = *collected_segments.first_key_value().unwrap().0;
             let (_final_addr, flattened) = collected_segments.into_iter()
                 .fold((None, vec![]), |(last_addr, mut flattened), (addr, bytes)| {
-                    println!("{addr:#x}");
                     if let Some(la) = last_addr {
-                        let gap_size = dbg!(addr) - dbg!(la);
+                        let gap_size = addr - la;
                         let new_len = flattened.len() + usize::try_from(gap_size).unwrap();
                         flattened.resize(new_len, 0xFF);
                     }
@@ -759,6 +757,9 @@ fn main() -> miette::Result<()> {
             z.write_all(&final_buf).into_diagnostic()?;
 
             drop(z);
+
+            let final_meta = std::fs::metadata(&outpath).into_diagnostic()?;
+            println!("built {}: {} on disk", outpath.display(), Size::from_bytes(final_meta.len()));
             Ok(())
         }
     }
