@@ -1059,6 +1059,16 @@ version = "0.1.0"
 source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#9270c3dca23e24fabb5c748587c2622f3dbd414a"
 
 [[package]]
+name = "kernel-generic-stm32g030"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "kern",
+ "stm32g0",
+]
+
+[[package]]
 name = "kernel-generic-stm32g031"
 version = "0.1.0"
 dependencies = [

@@ -7,6 +7,7 @@ edition = "2021"
 # It is annoying that the chip features are specified down to the package level,
 # but, that is how the stm32-metapac do.
 chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
+chip-stm32g030k8 = ["stm32-metapac/stm32g030k8"]
 
 [dependencies]
 drv-stm32g0-sys-api = { version = "0.1.0", path = "../stm32g0-sys-api" }
