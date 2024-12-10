@@ -1,10 +1,9 @@
-use std::{collections::{BTreeMap, BTreeSet}, error::Error, fs, io::Write as _, path::{Path, PathBuf}};
+use std::{collections::{BTreeMap, BTreeSet}, io::Write as _, path::Path};
 
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
-use size::Size;
 
-use crate::{appcfg::{self, AppDef}, get_target_spec};
+use crate::appcfg::{self, AppDef};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
