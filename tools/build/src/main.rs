@@ -1,4 +1,4 @@
-use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::{Range, RangeInclusive}, path::{Path, PathBuf}, process::Command, sync::Arc};
+use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::Range, path::{Path, PathBuf}, process::Command, sync::Arc, time::Instant};
 
 use clap::Parser;
 use comfy_table::CellAlignment;
@@ -162,8 +162,10 @@ fn main() -> miette::Result<()> {
                 println!();
             }
 
-            println!("Allocations:");
+            let alloc_begin = Instant::now();
             let allocs = allocate_space(&target_spec, &app.board.chip.memory, &size_reqs, &app.kernel)?;
+            let alloc_time = alloc_begin.elapsed();
+            println!("Allocations ({alloc_time:?}):");
 
             let mut table = comfy_table::Table::new();
             table.load_preset(comfy_table::presets::NOTHING);
@@ -540,7 +542,7 @@ fn main() -> miette::Result<()> {
             let app = appcfg::parse_app(source, &doc, &ctx)?;
 
             // See if we understand this target.
-            let target_spec = get_target_spec(app.board.chip.target_triple.value())
+            let _target_spec = get_target_spec(app.board.chip.target_triple.value())
                 .ok_or_else(|| {
                     miette!(
                         labels = [LabeledSpan::at(

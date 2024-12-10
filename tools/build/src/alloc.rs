@@ -101,7 +101,6 @@ pub fn allocate_space(
                         .collect(),
                 })
             }).collect::<BTreeMap<_, _>>();
-            println!("{tasks_granule:#?}");
             let Some((aresult, leftover)) = hubris_region_alloc::allocate(&tasks_granule, &available) else {
                 bail!("can't fit app in memory");
             };
