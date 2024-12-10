@@ -561,7 +561,9 @@ fn main() -> miette::Result<()> {
                 z.start_file("app.toml", opts).into_diagnostic()?;
 
                 let tasks_toml = app.tasks.iter().map(|(name, task)| {
+                    println!("{name}");
                     (name.clone(), hubris_build::bundle::TaskToml {
+                        notifications: task.notifications.clone(),
                     })
                 }).collect();
 
@@ -578,6 +580,7 @@ fn main() -> miette::Result<()> {
                     tasks: tasks_toml,
                 };
                 let toml_text = toml::to_string(&app_toml).into_diagnostic()?;
+                writeln!(z, "# stub TOML generated because Humility expects it").into_diagnostic()?;
                 z.write_all(toml_text.as_bytes()).into_diagnostic()?;
             }
 
@@ -590,45 +593,52 @@ fn main() -> miette::Result<()> {
             let mut elf_abi_version = BTreeSet::new();
             let mut kernel_entry = None;
 
-            for dirent in std::fs::read_dir(&bindir).into_diagnostic()? {
-                let dirent = dirent.into_diagnostic()?;
-                if dirent.path().is_file() {
-                    let name = dirent.file_name();
-                    let name = name.to_str().unwrap();
+            let names = app.tasks.keys()
+                .map(|s| s.as_str())
+                .chain(std::iter::once("kernel"));
 
-                    let elf_bytes = std::fs::read(dirent.path())
-                        .into_diagnostic()?;
-                    z.start_file(format!("elf/{name}"), opts)
-                        .into_diagnostic()?;
-                    z.write_all(&elf_bytes).into_diagnostic()?;
+            for name in names {
+                let is_the_kernel = name == "kernel";
 
-                    let elf = goblin::elf::Elf::parse(&elf_bytes)
-                        .into_diagnostic()?;
-                    little_endian.insert(elf.little_endian);
-                    is_64.insert(elf.is_64);
-                    elf_machine.insert(elf.header.e_machine);
-                    elf_os_abi.insert(elf.header.e_ident[goblin::elf::header::EI_OSABI]);
-                    elf_abi_version.insert(elf.header.e_ident[goblin::elf::header::EI_ABIVERSION]);
+                let archive_path = if is_the_kernel {
+                    "elf/kernel".to_string()
+                } else {
+                    format!("elf/task/{name}")
+                };
 
-                    for phdr in &elf.program_headers {
-                        if phdr.p_type != goblin::elf::program_header::PT_LOAD {
-                            continue;
-                        }
-                        if phdr.p_filesz == 0 {
-                            continue;
-                        }
-                        let start = usize::try_from(phdr.p_offset).unwrap();
-                        let end = start + usize::try_from(phdr.p_filesz).unwrap();
-                        let segment_bytes = elf_bytes[start..end].to_vec();
-                        collected_segments.insert(
-                            phdr.p_paddr,
-                            segment_bytes,
-                        );
+                let elfpath = bindir.join(name);
+                let elf_bytes = std::fs::read(&elfpath)
+                    .into_diagnostic()?;
+                z.start_file(archive_path, opts)
+                    .into_diagnostic()?;
+                z.write_all(&elf_bytes).into_diagnostic()?;
+
+                let elf = goblin::elf::Elf::parse(&elf_bytes)
+                    .into_diagnostic()?;
+                little_endian.insert(elf.little_endian);
+                is_64.insert(elf.is_64);
+                elf_machine.insert(elf.header.e_machine);
+                elf_os_abi.insert(elf.header.e_ident[goblin::elf::header::EI_OSABI]);
+                elf_abi_version.insert(elf.header.e_ident[goblin::elf::header::EI_ABIVERSION]);
+
+                for phdr in &elf.program_headers {
+                    if phdr.p_type != goblin::elf::program_header::PT_LOAD {
+                        continue;
                     }
-
-                    if name == "kernel" {
-                        kernel_entry = Some(elf.entry);
+                    if phdr.p_filesz == 0 {
+                        continue;
                     }
+                    let start = usize::try_from(phdr.p_offset).unwrap();
+                    let end = start + usize::try_from(phdr.p_filesz).unwrap();
+                    let segment_bytes = elf_bytes[start..end].to_vec();
+                    collected_segments.insert(
+                        phdr.p_paddr,
+                        segment_bytes,
+                    );
+                }
+
+                if is_the_kernel {
+                    kernel_entry = Some(elf.entry);
                 }
             }
 

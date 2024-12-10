@@ -1,4 +1,4 @@
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -19,4 +19,5 @@ pub struct KernelToml {
 
 #[derive(Serialize)]
 pub struct TaskToml {
+    pub notifications: IndexSet<String>,
 }

@@ -30,5 +30,5 @@ convert_case = "0.6.0"
 proc-macro2 = "1.0.92"
 lazy_static = "1.5.0"
 zip = "2.2.1"
-toml = "0.8.19"
+toml = { version = "0.8.19", features = ["preserve_order"] }
 object = { version = "0.36.5", features = ["write"] }
