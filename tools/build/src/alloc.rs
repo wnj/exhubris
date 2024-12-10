@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, ops::RangeInclusive};
-
+use std::{collections::BTreeMap, ops::{RangeInclusive, Range}};
 use indexmap::IndexMap;
+use hubris_region_alloc::{Mem, TaskInfo, TaskName};
+use miette::bail;
 
-use crate::{appcfg::{KernelDef, RegionDef, Spanned}, TargetSpec};
+use crate::{appcfg::{KernelDef, RegionDef, Spanned}, SizeRule, TargetSpec};
 
 #[derive(Clone, Debug, Default)]
 pub struct Allocations {
@@ -13,8 +14,8 @@ pub struct Allocations {
 impl Allocations {
     pub fn by_region(&self) -> BTreeMap<&str, IndexMap<&str, &TaskAllocation>> {
         let mut pivot: BTreeMap<_, IndexMap<_, _>> = BTreeMap::new();
-        for (task_name, regions) in &self.tasks {
-            for (region_name, alloc) in regions {
+        for (task_name, ta) in &self.tasks {
+            for (region_name, alloc) in ta {
                 pivot.entry(region_name.as_str())
                     .or_default()
                     .insert(task_name.as_str(), alloc);
@@ -25,52 +26,55 @@ impl Allocations {
 }
 
 #[derive(Clone, Debug)]
-pub struct TaskAllocation {
-    pub requested: u64,
-    pub actual: RangeInclusive<u64>,
-}
-
-#[derive(Clone, Debug)]
 pub struct KernelAllocation {
-    pub by_region: BTreeMap<String, RangeInclusive<u64>>,
-    pub stack: RangeInclusive<u64>,
+    pub by_region: BTreeMap<Mem, Range<u64>>,
+    pub stack: Range<u64>,
 }
 
 impl Default for KernelAllocation {
     fn default() -> Self {
-        Self { by_region: Default::default(), stack: 0..=0 }
+        Self { by_region: Default::default(), stack: 0..0 }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TaskAllocation {
+    pub requested: u64,
+    pub base: u64,
+    pub sizes: Vec<u64>,
+}
+
+impl TaskAllocation {
+    pub fn calculate_size(&self) -> u64 {
+        self.sizes.iter().sum()
+    }
+
+    pub fn range_inclusive(&self) -> RangeInclusive<u64> {
+        let size = self.calculate_size();
+        self.base..=self.base + (size - 1)
     }
 }
 
 pub fn allocate_space(
     target_spec: &TargetSpec,
     available: &IndexMap<String, Spanned<RegionDef>>,
-    required: &BTreeMap<String, IndexMap<&str, u64>>,
+    tasks: &BTreeMap<TaskName, TaskInfo>,
     kernel: &KernelDef,
 ) -> miette::Result<Allocations> {
+    let mut available = available.iter().map(|(name, def)| {
+        let base = *def.value().base.value();
+        (Mem(name.clone()), base..base + def.value().size.value())
+    }).collect::<BTreeMap<_, _>>();
     let mut results = Allocations::default();
-
-    for (region_name, region) in available {
-        let Some(reqs) = required.get(region_name.as_str()) else {
-            continue;
-        };
-        let is_ram = region_name.eq_ignore_ascii_case("RAM");
-        // Sort requests for this region in descending size order, under the
-        // assumption that larger requests also have larger alignment
-        // requirements (on platforms where such alignment requirements exist).
-        // TODO: this is merely an approximation of the right approach.
-        let mut reqs = reqs.iter().collect::<Vec<_>>();
-        reqs.sort_by_key(|(_name, size)| *size);
-        reqs.reverse();
-
+    for (region_name, region) in &mut available {
+        let is_ram = region_name.0.eq_ignore_ascii_case("RAM");
         // Derive some region characteristics.
-        let orig_addr = *region.value().base.value();
-        let end = orig_addr + *region.value().size.value();
+        let orig_addr = region.start;
         let mut addr = target_spec.align_before_allocation(orig_addr);
         // Carve stack space out of the RAM region.
         if is_ram {
             addr = target_spec.align_for_stack(addr);
-            results.kernel.stack = addr..=addr + (kernel.stack_size.value() - 1);
+            results.kernel.stack = addr..addr + kernel.stack_size.value();
             addr += kernel.stack_size.value();
             addr = target_spec.align_for_stack(addr);
         }
@@ -78,37 +82,47 @@ pub fn allocate_space(
             eprintln!("warning: adjusted region {region_name} base up to {addr:#x} from {orig_addr:#x}");
         }
 
-        // Filter out zero-size requests.
-        reqs.retain(|(_name, size)| **size != 0);
+        region.start = addr;
+    }
 
-        // Attempt to allocate in multiple passes, inserting padding if
-        // required.
-        while !reqs.is_empty() {
-            // Attempt to satisfy each request without increasing the alignment.
-            let start_len = reqs.len();
-            for (i, (taskname, requested_size)) in reqs.iter().enumerate() {
-                let size = target_spec.round_allocation_size(**requested_size);
-                let reqd_addr = target_spec.align_for_allocation_size(addr, size);
-                if reqd_addr == addr {
-                    // Sweet, we can satisfy this without padding.
-                    results.tasks.entry(taskname.to_string())
-                        .or_default()
-                        .insert(region_name.clone(), TaskAllocation {
-                            requested: **requested_size,
-                            actual: addr..=addr + (size - 1),
-                        });
-                    addr += size;
-                    reqs.remove(i);
-                    break;
+    match &target_spec.size_rule {
+        SizeRule::PowerOfTwo => {
+            let granule = target_spec.alloc_minimum.next_power_of_two();
+            let round = granule - 1;
+            available.values_mut().for_each(|range| {
+                range.start = (range.start + round) / granule;
+                range.end = (range.end + round) / granule;
+            });
+            let tasks_granule = tasks.iter().map(|(name, info)| {
+                (name.clone(), TaskInfo {
+                    regs_avail: info.regs_avail,
+                    reqs: info.reqs.iter()
+                        .map(|(mem, size)| (mem.clone(), (size + round) / granule))
+                        .collect(),
+                })
+            }).collect::<BTreeMap<_, _>>();
+            println!("{tasks_granule:#?}");
+            let Some((aresult, leftover)) = hubris_region_alloc::allocate(&tasks_granule, &available) else {
+                bail!("can't fit app in memory");
+            };
+            for (name, info) in tasks {
+                let ta = results.tasks.entry(name.0.clone()).or_default();
+                for (region, alloc) in &aresult.tasks[name].regions {
+                    ta.insert(region.0.clone(), TaskAllocation {
+                        requested: info.reqs[region],
+                        base: alloc.1 * granule,
+                        sizes: alloc.2.iter().map(|i| (1 << i) * granule).collect(),
+                    });
                 }
-            }
 
-            if !reqs.is_empty() && reqs.len() == start_len {
-                addr = target_spec.align_to_next_larger_boundary(addr);
             }
+            results.kernel.by_region = leftover.into_iter().map(|(name, range)| {
+                (name, range.start * granule .. range.end * granule)
+            }).collect();
         }
-
-        results.kernel.by_region.insert(region_name.to_string(), addr..=end - 1);
+        SizeRule::MultipleOf(_granule) => {
+            todo!()
+        }
     }
 
     Ok(results)

@@ -3,12 +3,11 @@ use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Writ
 use clap::Parser;
 use comfy_table::CellAlignment;
 use goblin::elf::program_header::PT_LOAD;
-use indexmap::IndexMap;
 use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
 use hubris_build::{alloc::{allocate_space, TaskAllocation}, appcfg::{self, AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
-
+use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 use hubris_build_kconfig as kconfig;
 
 #[derive(Parser)]
@@ -125,7 +124,7 @@ fn main() -> miette::Result<()> {
             // Begin the second link phase...
             banner("Task build complete, prelinking for size...");
 
-            let mut size_reqs: BTreeMap<String, IndexMap<&str, u64>> = BTreeMap::new();
+            let mut size_reqs: BTreeMap<TaskName, TaskInfo> = BTreeMap::new();
             let temp_link_dir = workdir.join("link2");
             maybe_create_dir(&temp_link_dir).into_diagnostic()?;
             std::fs::write(workdir.join("task-link2.x"), include_str!("../../../files/task-link2.x")).into_diagnostic()?;
@@ -141,18 +140,20 @@ fn main() -> miette::Result<()> {
                     &workdir.join("task-link2.x"),
                 )?;
 
+                let ti = size_reqs.entry(TaskName(taskname.clone())).or_default();
                 for (region, range) in region_sizes {
                     let size = range.end - range.start;
-                    size_reqs.entry(region).or_default().insert(taskname, size);
+                    ti.reqs.insert(Mem(region), size);
                 }
+                ti.regs_avail = target_spec.region_count - app.tasks[taskname].peripherals.len();
             }
             {
                 let mut table = comfy_table::Table::new();
                 table.load_preset(comfy_table::presets::NOTHING);
                 table.set_header(["REGION", "OWNER", "SIZE"]);
 
-                for (taskname, reqs) in &size_reqs {
-                    for (memname, size) in reqs {
+                for (taskname, ti) in &size_reqs {
+                    for (memname, size) in &ti.reqs {
                         table.add_row([taskname.to_string(), memname.to_string(), Size::from_bytes(*size).to_string()]);
                     }
                 }
@@ -173,44 +174,44 @@ fn main() -> miette::Result<()> {
             table.column_mut(5).unwrap().set_cell_alignment(CellAlignment::Right);
             for (region_name, regallocs) in allocs.by_region() {
                 let mut regallocs = regallocs.iter().collect::<Vec<_>>();
-                regallocs.sort_by_key(|(_name, ta)| *ta.actual.start());
+                regallocs.sort_by_key(|(_name, ta)| ta.base);
                 let mut total = 0;
                 let mut loss = 0;
 
                 let mut last = None;
                 for (task_name, talloc) in regallocs {
-                    let range = &talloc.actual;
+                    let base = talloc.base;
                     let req_size = talloc.requested;
 
                     if let Some(last) = last {
-                        if *range.start() != last + 1 {
-                            let pad_size = *range.start() - (last + 1);
+                        if base != last {
+                            let pad_size = base - last;
                             total += pad_size;
                             loss += pad_size;
                             table.add_row([
                                 region_name.to_string(),
                                 "-pad-".to_string(),
-                                format!("{:#x}", last + 1),
-                                format!("{:#x}", *range.start() - 1),
+                                format!("{:#x}", last),
+                                format!("{:#x}", base - 1),
                                 Size::from_bytes(pad_size).to_string(),
                                 Size::from_bytes(pad_size).to_string(),
                             ]);
                         }
                     }
-                    let size = range.end() - range.start() + 1;
+                    let size = talloc.sizes.iter().sum::<u64>();
                     let internal_pad = size - req_size;
                     table.add_row([
                         region_name.to_string(),
                         task_name.to_string(),
-                        format!("{:#x}", range.start()),
-                        format!("{:#x}", range.end()),
+                        format!("{:#x}", base),
+                        format!("{:#x}", base + size - 1),
                         Size::from_bytes(size).to_string(),
                         Size::from_bytes(internal_pad).to_string(),
                     ]);
                     total += size;
                     loss += internal_pad;
 
-                    last = Some(*range.end());
+                    last = Some(base + size);
                 }
                 table.add_row([
                     region_name.to_string(),
@@ -314,10 +315,11 @@ fn main() -> miette::Result<()> {
                 for (name, reg) in task.owned_regions {
                     let mem = &app.board.chip.memory[&name].value();
 
-                    let size = (reg.range.end() - reg.range.start()) + 1;
                     config.owned_regions.insert(name, kconfig::MultiRegionConfig {
-                        base: u32::try_from(*reg.range.start()).into_diagnostic()?,
-                        sizes: vec![u32::try_from(size).into_diagnostic()?],
+                        base: u32::try_from(reg.base).into_diagnostic()?,
+                        sizes: reg.sizes.iter().map(|n| u32::try_from(*n)
+                            .into_diagnostic())
+                            .collect::<miette::Result<Vec<_>>>()?,
                         attributes: kconfig::RegionAttributes {
                             read: mem.read,
                             write: mem.write,
@@ -344,18 +346,18 @@ fn main() -> miette::Result<()> {
                 writeln!(scr, "MEMORY {{").into_diagnostic()?;
 
                 writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
-                allocs.kernel.stack.start(),
-                (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
-                ).into_diagnostic()?;
+                    allocs.kernel.stack.start,
+                    allocs.kernel.stack.end - allocs.kernel.stack.start,
+                    ).into_diagnostic()?;
 
                 for orig_name in app.board.chip.memory.keys() {
-                    let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
+                    let Some(regalloc) = allocs.kernel.by_region.get(&Mem(orig_name.clone())) else {
                         continue;
                     };
 
                     let name = orig_name.to_ascii_uppercase();
-                    let base = *regalloc.start();
-                    let size = (regalloc.end() - regalloc.start()) + 1;
+                    let base = regalloc.start;
+                    let size = regalloc.end - regalloc.start;
 
                     writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
                 }
@@ -791,7 +793,15 @@ struct BuiltTask {
 }
 
 struct OwnedRegion {
-    range: RangeInclusive<u64>,
+    base: u64,
+    sizes: Vec<u64>,
+}
+
+impl OwnedRegion {
+    pub fn contains(&self, addr: u64) -> bool {
+        let size = self.sizes.iter().sum::<u64>();
+        addr >= self.base && addr < (self.base + size)
+    }
 }
 
 struct OwnedAddress {
@@ -993,12 +1003,13 @@ fn relink(
         };
 
         owned_regions.insert(orig_name.to_string(), OwnedRegion {
-            range: regalloc.actual.clone(),
+            base: regalloc.base,
+            sizes: regalloc.sizes.clone(),
         });
 
         let name = orig_name.to_ascii_uppercase();
-        let mut base = *regalloc.actual.start();
-        let mut size = (regalloc.actual.end() - regalloc.actual.start()) + 1;
+        let mut base = regalloc.base;
+        let mut size = regalloc.calculate_size();
 
         if name == "RAM" {
             // deduct stack
@@ -1062,7 +1073,8 @@ fn relink_for_size(
     let alloc_everything = app.board.chip.memory.iter()
         .map(|(name, regdef)| (name.clone(), TaskAllocation {
             requested: 0,
-            actual: *regdef.value().base.value()..=regdef.value().base.value() + regdef.value().size.value() - 1,
+            base: *regdef.value().base.value(),
+            sizes: vec![*regdef.value().size.value()],
         }))
     .collect();
     relink(env, app, target, targetroot, taskname, inpath, outpath, linker_script, &alloc_everything)?;
@@ -1116,13 +1128,12 @@ fn relink_final(
     let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
 
     let entry_region = owned_regions.iter()
-    .find(|(_name, reg)| elf.entry >= *reg.range.start()
-        && elf.entry <= *reg.range.end());
+        .find(|(_name, reg)| reg.contains(elf.entry));
     let entry_region = entry_region.expect("invalid entry point");
 
     let entry = OwnedAddress {
         region: entry_region.0.to_string(),
-        offset: elf.entry - entry_region.1.range.start(),
+        offset: elf.entry - entry_region.1.base,
     };
     let initial_stack_pointer = initial_stack_pointer.expect("missing RAM region?");
 

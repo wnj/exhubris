@@ -7,6 +7,7 @@ members = [
     "drv/*",
     "tools/build",
     "tools/hubake",
+    "tools/alloc",
 
     "app/kbd/keyboard",
     "app/kbd/basic-scanner",
