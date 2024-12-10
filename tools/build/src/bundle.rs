@@ -21,3 +21,10 @@ pub struct KernelToml {
 pub struct TaskToml {
     pub notifications: IndexSet<String>,
 }
+
+
+#[derive(Serialize)]
+pub struct FlashRon {
+    pub chip: Option<String>,
+}
+

@@ -60,6 +60,9 @@ pub struct ChipDef {
 
     /// Named peripherals.
     pub peripherals: BTreeMap<String, Spanned<PeripheralDef>>,
+
+    /// Name of the chip for probe-rs purposes.
+    pub probe_rs_name: Option<Spanned<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -411,6 +414,8 @@ pub fn parse_chip(
             .map(|(key, node)| parse_peripheral(node).map(|r| (key, r)))
             .collect::<miette::Result<BTreeMap<_, _>>>()?;
 
+        let probe_rs_name = get_unique_optional_string_value(doc, "probe-rs-name")?;
+
         Ok(ChipDef {
             source: source.clone(),
             name,
@@ -418,6 +423,7 @@ pub fn parse_chip(
             vector_table_size,
             memory,
             peripherals,
+            probe_rs_name,
         })
     })
 }

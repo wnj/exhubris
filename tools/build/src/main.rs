@@ -593,6 +593,15 @@ fn main() -> miette::Result<()> {
             let mut elf_abi_version = BTreeSet::new();
             let mut kernel_entry = None;
 
+            if let Some(prs_name) = &app.board.chip.probe_rs_name {
+                let text = ron::to_string(&hubris_build::bundle::FlashRon {
+                    chip: Some(prs_name.value().clone()),
+                }).into_diagnostic()?;
+                z.start_file("img/flash.ron", opts)
+                    .into_diagnostic()?;
+                z.write_all(text.as_bytes()).into_diagnostic()?;
+            }
+
             let names = app.tasks.keys()
                 .map(|s| s.as_str())
                 .chain(std::iter::once("kernel"));
