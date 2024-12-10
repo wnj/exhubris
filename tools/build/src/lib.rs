@@ -98,6 +98,8 @@ pub struct TargetSpec {
     pub stack_align: u64,
     /// BFD architecture name.
     pub bfd_name: String,
+    /// Number of MPU regions available.
+    pub region_count: usize,
 }
 
 impl TargetSpec {
@@ -152,18 +154,21 @@ pub fn get_target_spec(triple: &str) -> Option<TargetSpec> {
             alloc_minimum: 32,
             stack_align: 8,
             bfd_name: "armelf".to_string(),
+            region_count: 8 - 1,
         }),
         "thumbv7em-none-eabihf" => Some(TargetSpec {
             size_rule: SizeRule::PowerOfTwo,
             alloc_minimum: 32,
             stack_align: 8,
             bfd_name: "armelf".to_string(),
+            region_count: 8 - 1,
         }),
         "thumbv8m.main-none-eabihf" => Some(TargetSpec {
             size_rule: SizeRule::MultipleOf(32),
             alloc_minimum: 32,
             stack_align: 8,
             bfd_name: "armelf".to_string(),
+            region_count: 8 - 1,
         }),
         _ => None,
     }
