@@ -2,6 +2,7 @@ pub mod appcfg;
 pub mod alloc;
 pub mod idl;
 pub mod config;
+pub mod bundle;
 
 use std::{path::PathBuf, process::Command};
 
