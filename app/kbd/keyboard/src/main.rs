@@ -1,91 +1,30 @@
 //! Basic USB HID keyboard engine.
 //!
-//! This task manages key matrix scanning and report construction, driven by the
-//! OS timer and the USB task.
+//! This task maintains _logical_ keyboard state and constructs USB HID reports
+//! that reflect it. (This is distinct from _physical_ keyboard state, which is
+//! the state of the key matrix.)
 //!
-//! # Operation
+//! This task has two collaborator tasks:
 //!
-//! This task runs a continuous event loop, driven by its OS timer, that sets
-//! one SCANOUT line high at a time, and then reads the state of all SCANIN
-//! lines. Because the keyboard in question is tiny (four keys) I'm just doing
-//! this in software at a relatively low polling rate (500 Hz). Key states are
-//! tracked in a basic array of `bool`s on the stack. I'm not debouncing at the
-//! moment because this is a proof of concept.
+//! - `usbhid` for actually delivering HID reports and learning about USB
+//!   protocol state machine transitions.
 //!
-//! The other events come from the USB task. The USB task doesn't interact with
-//! us until the host has set up and configured the USB device. At that point,
-//! we start receiving events that we need to respond to.
+//! - `scanner` for monitoring the key matrix and detecting transitions.
 //!
-//! The basic structure of any USB event is as follows:
+//! We basically only act in response to events from one of those collaborators.
+//! Both of our collaborators have response time requirements, so they will
+//! normally be higher priority than this task and cannot message us directly.
+//! As a result, interaction is "backwards" through the pingback pattern.
 //!
-//! 1. The USB task posts our `USB_EVENT_READY` notification, finishes up
-//!    whatever it was doing, and goes to sleep.
-//! 2. We wake up and notice the notification. In response, we send a
-//!    `get_event` message to the USB task.
-//! 3. The USB task wakes up to receive the event and replies with a `UsbEvent`
-//!    describing the condition we need to handle. It then goes back to sleep.
-//! 4. We receive the reply and take action. Some events currently require no
-//!    action, but most require us to furnish the USB task with either our
-//!    report descriptor, or the next report. We deliver these by sending the
-//!    USB task an `enqueue_report` message, loaning the appropriate section of
-//!    our memory along with it.
-//! 5. The USB task wakes to receive the `enqueue_report` message and copies our
-//!    loaned data into the USB controller's SRAM. It configures the USB
-//!    controller to transmit that data on the next IN operation on that
-//!    endpoint, replies to us (with an empty message), and goes back to sleep.
-//! 6. Receiving our reply, we go back to the top of the event loop and go to
-//!    sleep.
+//! Concretely, when a collaborator decides that they have something to tell us,
+//! they post a notification to this task. This task wakes up, notices the
+//! notification, and sends a message to the corresponding collaborator to find
+//! out what happened.
 //!
-//! Or in ASCII art form,
-//!
-//! ```text
-//! +-----------+          +---------+                         +-----------+
-//! | Hardware  |          | USBHID  |                         | Keyboard  |
-//! +-----------+          +---------+                         +-----------+
-//!       |                     |                                    |
-//!       | IRQ                 |                                    |
-//!       |-------------------->|                                    |
-//!       |                     |                      ------------\ |
-//!       |                     |                      | is asleep |-|
-//!       |                     |                      |-----------| |
-//!       |                     |                                    |
-//!       |                     | posts EVENT notification.          |
-//!       |                     |----------------------------------->|
-//!       |                     | ---------------------\             |
-//!       |                     |-| goes back to sleep |             |
-//!       |                     | |--------------------|             |
-//!       |                     |                      ------------\ |
-//!       |                     |                      | wakes up! |-|
-//!       |                     |                      |-----------| |
-//!       |                     |                                    |
-//!       |                     |           sends GET_EVENT message. |
-//!       |                     |<-----------------------------------|
-//!       |                     |                                    |
-//!       |                     | returns the event.                 |
-//!       |                     |----------------------------------->|
-//!       |                     | ---------------------\             |
-//!       |                     |-| goes back to sleep |             |
-//!       |                     | |--------------------|             |
-//!       |                     |                                    |
-//!       |                     |       sends ENQUEUE_REPORT message |
-//!       |                     |<-----------------------------------|
-//!       |                     | -----------------------\           |
-//!       |                     |-| copies into USB SRAM |           |
-//!       |                     | |----------------------|           |
-//!       |                     |                                    |
-//!       |      endpoint ready |                                    |
-//!       |<--------------------|                                    |
-//!       |                     |                                    |
-//!       |                     | empty reply                        |
-//!       |                     |----------------------------------->|
-//!       |                     | ---------------------\             |
-//!       |                     |-| goes back to sleep |             |
-//!       |                     | |--------------------|             |
-//!       |                     |        --------------------------\ |
-//!       |                     |        | also goes back to sleep |-|
-//!       |                     |        |-------------------------| |
-//!       |                     |                                    |
-//! ```
+//! This has one more syscall round-trip than the simple pattern of delivering
+//! messages directly to this task, but ensures that the two collaborator tasks
+//! can't block each other by accident, and that this task can't block either of
+//! them.
 
 #![no_std]
 #![no_main]

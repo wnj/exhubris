@@ -316,7 +316,7 @@ fn main() -> miette::Result<()> {
                         offset: u32::try_from(task.initial_stack_pointer.offset).into_diagnostic()?,
                     },
                     priority: *app.tasks[&task.name].priority.value(),
-                    start_at_boot: true,
+                    start_at_boot: !app.tasks[&task.name].wait_for_reinit,
                 };
 
                 for (name, reg) in task.owned_regions {

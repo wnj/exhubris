@@ -105,6 +105,9 @@ pub struct TaskDef {
     /// Explicit stack size for task.
     pub stack_size: Spanned<u64>,
 
+    // Don't start this task automatically, wait for the supervisor to do it.
+    pub wait_for_reinit: bool,
+
     /// Priority of the task (lower numbers are more important).
     pub priority: Spanned<u8>,
 
@@ -563,9 +566,12 @@ pub fn parse_task(
             })
             .collect::<miette::Result<IndexMap<_, _>>>()?;
 
+        let wait_for_reinit = get_unique_bool(doc, "wait-for-reinit")?;
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
+            wait_for_reinit,
             package_source,
             priority,
             cargo_features: unique_features.into_iter().collect(),

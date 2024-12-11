@@ -20,7 +20,58 @@
 //!
 //! When we need the keyboard task to do something, we poke it by posting a
 //! (configurable) notification. It then calls back through our IPC interface to
-//! make things happen. See the keyboard task docs for an elaborate explanation.
+//! make things happen.
+//!
+//! In ASCII art form:
+//!
+//! ```text
+//! +-----------+          +---------+                         +-----------+
+//! | Hardware  |          | USBHID  |                         | Keyboard  |
+//! +-----------+          +---------+                         +-----------+
+//!       |                     |                                    |
+//!       | IRQ                 |                                    |
+//!       |-------------------->|                                    |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | is asleep |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     | posts EVENT notification.          |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | wakes up! |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     |           sends GET_EVENT message. |
+//!       |                     |<-----------------------------------|
+//!       |                     |                                    |
+//!       |                     | returns the event.                 |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |                                    |
+//!       |                     |       sends ENQUEUE_REPORT message |
+//!       |                     |<-----------------------------------|
+//!       |                     | -----------------------\           |
+//!       |                     |-| copies into USB SRAM |           |
+//!       |                     | |----------------------|           |
+//!       |                     |                                    |
+//!       |      endpoint ready |                                    |
+//!       |<--------------------|                                    |
+//!       |                     |                                    |
+//!       |                     | empty reply                        |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |        --------------------------\ |
+//!       |                     |        | also goes back to sleep |-|
+//!       |                     |        |-------------------------| |
+//!       |                     |                                    |
+//! ```
 
 #![no_std]
 #![no_main]
