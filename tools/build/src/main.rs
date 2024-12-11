@@ -1,14 +1,13 @@
-use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::{Range, RangeInclusive}, path::{Path, PathBuf}, process::Command, sync::Arc};
+use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::Range, path::{Path, PathBuf}, process::Command, sync::Arc, time::Instant};
 
 use clap::Parser;
 use comfy_table::CellAlignment;
 use goblin::elf::program_header::PT_LOAD;
-use indexmap::IndexMap;
 use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
 use hubris_build::{alloc::{allocate_space, TaskAllocation}, appcfg::{self, AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
-
+use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 use hubris_build_kconfig as kconfig;
 
 #[derive(Parser)]
@@ -28,6 +27,11 @@ enum Cmd {
         /// all Cargo commands)
         #[clap(long)]
         cargo_verbose: bool,
+
+        /// Overrides the output bundle path, if you'd like it placed somewhere
+        /// specific. Defaults to APPNAME-build.zip in the project root.
+        #[clap(short, long)]
+        out: Option<PathBuf>,
     },
     PackHex {
         bindir: PathBuf,
@@ -50,7 +54,7 @@ fn main() -> miette::Result<()> {
     let args = Tool::parse();
 
     match args.cmd {
-        Cmd::Build { cfg_path, cargo_verbose } => {
+        Cmd::Build { cfg_path, cargo_verbose, out } => {
             // Canonicalize directories and locate/parse input files.
             let root = std::env::var("HUBRIS_PROJECT_ROOT").into_diagnostic()?;
             let root = PathBuf::from(root);
@@ -125,7 +129,7 @@ fn main() -> miette::Result<()> {
             // Begin the second link phase...
             banner("Task build complete, prelinking for size...");
 
-            let mut size_reqs: BTreeMap<String, IndexMap<&str, u64>> = BTreeMap::new();
+            let mut size_reqs: BTreeMap<TaskName, TaskInfo> = BTreeMap::new();
             let temp_link_dir = workdir.join("link2");
             maybe_create_dir(&temp_link_dir).into_diagnostic()?;
             std::fs::write(workdir.join("task-link2.x"), include_str!("../../../files/task-link2.x")).into_diagnostic()?;
@@ -141,18 +145,20 @@ fn main() -> miette::Result<()> {
                     &workdir.join("task-link2.x"),
                 )?;
 
+                let ti = size_reqs.entry(TaskName(taskname.clone())).or_default();
                 for (region, range) in region_sizes {
                     let size = range.end - range.start;
-                    size_reqs.entry(region).or_default().insert(taskname, size);
+                    ti.reqs.insert(Mem(region), size);
                 }
+                ti.regs_avail = target_spec.region_count - app.tasks[taskname].peripherals.len();
             }
             {
                 let mut table = comfy_table::Table::new();
                 table.load_preset(comfy_table::presets::NOTHING);
                 table.set_header(["REGION", "OWNER", "SIZE"]);
 
-                for (taskname, reqs) in &size_reqs {
-                    for (memname, size) in reqs {
+                for (taskname, ti) in &size_reqs {
+                    for (memname, size) in &ti.reqs {
                         table.add_row([taskname.to_string(), memname.to_string(), Size::from_bytes(*size).to_string()]);
                     }
                 }
@@ -161,8 +167,10 @@ fn main() -> miette::Result<()> {
                 println!();
             }
 
-            println!("Allocations:");
+            let alloc_begin = Instant::now();
             let allocs = allocate_space(&target_spec, &app.board.chip.memory, &size_reqs, &app.kernel)?;
+            let alloc_time = alloc_begin.elapsed();
+            println!("Allocations ({alloc_time:?}):");
 
             let mut table = comfy_table::Table::new();
             table.load_preset(comfy_table::presets::NOTHING);
@@ -173,44 +181,44 @@ fn main() -> miette::Result<()> {
             table.column_mut(5).unwrap().set_cell_alignment(CellAlignment::Right);
             for (region_name, regallocs) in allocs.by_region() {
                 let mut regallocs = regallocs.iter().collect::<Vec<_>>();
-                regallocs.sort_by_key(|(_name, ta)| *ta.actual.start());
+                regallocs.sort_by_key(|(_name, ta)| ta.base);
                 let mut total = 0;
                 let mut loss = 0;
 
                 let mut last = None;
                 for (task_name, talloc) in regallocs {
-                    let range = &talloc.actual;
+                    let base = talloc.base;
                     let req_size = talloc.requested;
 
                     if let Some(last) = last {
-                        if *range.start() != last + 1 {
-                            let pad_size = *range.start() - (last + 1);
+                        if base != last {
+                            let pad_size = base - last;
                             total += pad_size;
                             loss += pad_size;
                             table.add_row([
                                 region_name.to_string(),
                                 "-pad-".to_string(),
-                                format!("{:#x}", last + 1),
-                                format!("{:#x}", *range.start() - 1),
+                                format!("{:#x}", last),
+                                format!("{:#x}", base - 1),
                                 Size::from_bytes(pad_size).to_string(),
                                 Size::from_bytes(pad_size).to_string(),
                             ]);
                         }
                     }
-                    let size = range.end() - range.start() + 1;
+                    let size = talloc.sizes.iter().sum::<u64>();
                     let internal_pad = size - req_size;
                     table.add_row([
                         region_name.to_string(),
                         task_name.to_string(),
-                        format!("{:#x}", range.start()),
-                        format!("{:#x}", range.end()),
+                        format!("{:#x}", base),
+                        format!("{:#x}", base + size - 1),
                         Size::from_bytes(size).to_string(),
                         Size::from_bytes(internal_pad).to_string(),
                     ]);
                     total += size;
                     loss += internal_pad;
 
-                    last = Some(*range.end());
+                    last = Some(base + size);
                 }
                 table.add_row([
                     region_name.to_string(),
@@ -314,10 +322,11 @@ fn main() -> miette::Result<()> {
                 for (name, reg) in task.owned_regions {
                     let mem = &app.board.chip.memory[&name].value();
 
-                    let size = (reg.range.end() - reg.range.start()) + 1;
                     config.owned_regions.insert(name, kconfig::MultiRegionConfig {
-                        base: u32::try_from(*reg.range.start()).into_diagnostic()?,
-                        sizes: vec![u32::try_from(size).into_diagnostic()?],
+                        base: u32::try_from(reg.base).into_diagnostic()?,
+                        sizes: reg.sizes.iter().map(|n| u32::try_from(*n)
+                            .into_diagnostic())
+                            .collect::<miette::Result<Vec<_>>>()?,
                         attributes: kconfig::RegionAttributes {
                             read: mem.read,
                             write: mem.write,
@@ -344,18 +353,18 @@ fn main() -> miette::Result<()> {
                 writeln!(scr, "MEMORY {{").into_diagnostic()?;
 
                 writeln!(scr, "STACK (rw): ORIGIN = {:#x}, LENGTH = {:#x}",
-                allocs.kernel.stack.start(),
-                (allocs.kernel.stack.end() - allocs.kernel.stack.start()) + 1,
-                ).into_diagnostic()?;
+                    allocs.kernel.stack.start,
+                    allocs.kernel.stack.end - allocs.kernel.stack.start,
+                    ).into_diagnostic()?;
 
                 for orig_name in app.board.chip.memory.keys() {
-                    let Some(regalloc) = allocs.kernel.by_region.get(orig_name) else {
+                    let Some(regalloc) = allocs.kernel.by_region.get(&Mem(orig_name.clone())) else {
                         continue;
                     };
 
                     let name = orig_name.to_ascii_uppercase();
-                    let base = *regalloc.start();
-                    let size = (regalloc.end() - regalloc.start()) + 1;
+                    let base = regalloc.start;
+                    let size = regalloc.end - regalloc.start;
 
                     writeln!(scr, "{name} (rw): ORIGIN = {base:#x}, LENGTH = {size:#x}").into_diagnostic()?;
                 }
@@ -389,7 +398,16 @@ fn main() -> miette::Result<()> {
 
             std::fs::remove_file(tmpdir.join("memory.x")).into_diagnostic()?;
 
-            banner(format!("Build complete! Products in: {}", dir3.display()));
+            let out = out.unwrap_or_else(|| {
+                root.join(format!("{}-build.zip", app.name.value()))
+            });
+            hubris_build::bundle::make_bundle(
+                &app,
+                &dir3,
+                &out,
+            ).into_diagnostic()?;
+
+            banner(format!("Build complete! Archive: {}", out.display()));
 
             Ok(())
         }
@@ -537,215 +555,14 @@ fn main() -> miette::Result<()> {
             let ctx = appcfg::FsContext::from_root(&root);
             let app = appcfg::parse_app(source, &doc, &ctx)?;
 
-            // See if we understand this target.
-            let target_spec = get_target_spec(app.board.chip.target_triple.value())
-                .ok_or_else(|| {
-                    miette!(
-                        labels = [LabeledSpan::at(
-                            app.board.chip.target_triple.span(),
-                            "triple defined here",
-                        )],
-                        "target spec not defined for triple"
-                    )
-                })?;
+            hubris_build::bundle::make_bundle(
+                &app,
+                &bindir,
+                &outpath,
+            ).into_diagnostic()?;
 
-
-            let f = std::fs::File::create(&outpath)
-                .into_diagnostic()?;
-            let mut z = zip::ZipWriter::new(f);
-            let opts = zip::write::SimpleFileOptions::default();
-
-            z.set_comment("hubris build archive v9");
-
-            {
-                z.start_file("app.toml", opts).into_diagnostic()?;
-
-                let tasks_toml = app.tasks.iter().map(|(name, task)| {
-                    println!("{name}");
-                    (name.clone(), hubris_build::bundle::TaskToml {
-                        notifications: task.notifications.clone(),
-                    })
-                }).collect();
-
-                let app_toml = hubris_build::bundle::AppToml {
-                    name: app.name.value().clone(),
-                    target: app.board.chip.target_triple.value().clone(),
-                    board: app.board.name.value().clone(),
-                    kernel: hubris_build::bundle::KernelToml {
-                        name: match app.kernel.package_source.value() {
-                            appcfg::PackageSource::WorkspaceCrate { name } => name.clone(),
-                            appcfg::PackageSource::GitCrate { name, .. } => name.clone(),
-                        },
-                    },
-                    tasks: tasks_toml,
-                };
-                let toml_text = toml::to_string(&app_toml).into_diagnostic()?;
-                writeln!(z, "# stub TOML generated because Humility expects it").into_diagnostic()?;
-                z.write_all(toml_text.as_bytes()).into_diagnostic()?;
-            }
-
-            let mut collected_segments = BTreeMap::new();
-
-            let mut little_endian = BTreeSet::new();
-            let mut is_64 = BTreeSet::new();
-            let mut elf_machine = BTreeSet::new();
-            let mut elf_os_abi = BTreeSet::new();
-            let mut elf_abi_version = BTreeSet::new();
-            let mut kernel_entry = None;
-
-            let names = app.tasks.keys()
-                .map(|s| s.as_str())
-                .chain(std::iter::once("kernel"));
-
-            for name in names {
-                let is_the_kernel = name == "kernel";
-
-                let archive_path = if is_the_kernel {
-                    "elf/kernel".to_string()
-                } else {
-                    format!("elf/task/{name}")
-                };
-
-                let elfpath = bindir.join(name);
-                let elf_bytes = std::fs::read(&elfpath)
-                    .into_diagnostic()?;
-                z.start_file(archive_path, opts)
-                    .into_diagnostic()?;
-                z.write_all(&elf_bytes).into_diagnostic()?;
-
-                let elf = goblin::elf::Elf::parse(&elf_bytes)
-                    .into_diagnostic()?;
-                little_endian.insert(elf.little_endian);
-                is_64.insert(elf.is_64);
-                elf_machine.insert(elf.header.e_machine);
-                elf_os_abi.insert(elf.header.e_ident[goblin::elf::header::EI_OSABI]);
-                elf_abi_version.insert(elf.header.e_ident[goblin::elf::header::EI_ABIVERSION]);
-
-                for phdr in &elf.program_headers {
-                    if phdr.p_type != goblin::elf::program_header::PT_LOAD {
-                        continue;
-                    }
-                    if phdr.p_filesz == 0 {
-                        continue;
-                    }
-                    let start = usize::try_from(phdr.p_offset).unwrap();
-                    let end = start + usize::try_from(phdr.p_filesz).unwrap();
-                    let segment_bytes = elf_bytes[start..end].to_vec();
-                    collected_segments.insert(
-                        phdr.p_paddr,
-                        segment_bytes,
-                    );
-                }
-
-                if is_the_kernel {
-                    kernel_entry = Some(elf.entry);
-                }
-            }
-
-            let base_addr = *collected_segments.first_key_value().unwrap().0;
-            let (_final_addr, flattened) = collected_segments.into_iter()
-                .fold((None, vec![]), |(last_addr, mut flattened), (addr, bytes)| {
-                    println!("{addr:#x}");
-                    if let Some(la) = last_addr {
-                        let gap_size = dbg!(addr) - dbg!(la);
-                        let new_len = flattened.len() + usize::try_from(gap_size).unwrap();
-                        flattened.resize(new_len, 0xFF);
-                    }
-                    let n = bytes.len();
-                    flattened.extend(bytes);
-
-                    (Some(addr + u64::try_from(n).unwrap()), flattened)
-                });
-
-            if little_endian.len() == 2 {
-                bail!("mix of little- and big-endian objects?");
-            }
-            let little_endian = little_endian.pop_last().unwrap();
-            if is_64.len() == 2 {
-                bail!("mix of 32- and 64-bit objects?");
-            }
-            let is_64 = is_64.pop_last().unwrap();
-            if elf_os_abi.len() == 2 {
-                bail!("mix of OS ABI?");
-            }
-            let elf_os_abi = elf_os_abi.pop_last().unwrap();
-            if elf_abi_version.len() == 2 {
-                bail!("mix of ABI versions?");
-            }
-            let elf_abi_version = elf_abi_version.pop_last().unwrap();
-            if elf_machine.len() == 2 {
-                bail!("mix of machine types?");
-            }
-            let elf_machine = elf_machine.pop_last().unwrap();
-
-            let mut final_buf = vec![];
-            let mut w = object::write::elf::Writer::new(
-                if little_endian {
-                    object::Endianness::Little
-                } else {
-                    object::Endianness::Big
-                },
-                is_64,
-                &mut final_buf,
-            );
-            w.reserve_file_header();
-            w.reserve_program_headers(1);
-            let offset = w.reserve(flattened.len(), 8);
-            let _index = w.reserve_section_index();
-            let name = w.add_section_name(b".sec1");
-            w.reserve_shstrtab_section_index();
-            w.reserve_shstrtab();
-            w.reserve_section_headers();
-
-            w.write_file_header(&object::write::elf::FileHeader {
-                os_abi: elf_os_abi,
-                abi_version: elf_abi_version,
-                e_type: object::elf::ET_REL,
-                e_machine: elf_machine,
-                e_entry: kernel_entry.unwrap(),
-                e_flags: 0,
-            }).into_diagnostic()?;
-            w.write_align_program_headers();
-            let len64 = u64::try_from(flattened.len()).unwrap();
-            w.write_program_header(&object::write::elf::ProgramHeader {
-                p_type: object::elf::PT_LOAD,
-                p_flags: object::elf::PF_R,
-                p_offset: u64::try_from(offset).unwrap(),
-                p_vaddr: base_addr,
-                p_paddr: base_addr,
-                p_filesz: len64,
-                p_memsz: len64,
-                p_align: 0,
-            });
-
-            w.write_align(8);
-            assert_eq!(w.len(), offset);
-            w.write(&flattened);
-            w.write_shstrtab();
-            w.write_null_section_header();
-
-            w.write_section_header(&object::write::elf::SectionHeader {
-                name: Some(name),
-                sh_type: object::elf::SHT_PROGBITS,
-                sh_flags: (object::elf::SHF_WRITE | object::elf::SHF_ALLOC) as u64,
-                sh_addr: base_addr,
-                sh_offset: u64::try_from(offset).unwrap(),
-                sh_size: len64,
-                sh_link: 0,
-                sh_info: 0,
-                sh_addralign: 1,
-                sh_entsize: 0,
-            });
-
-            w.write_shstrtab_section_header();
-
-            assert_eq!(w.reserved_len(), w.len());
-
-            z.start_file("img/final.elf", opts)
-                .into_diagnostic()?;
-            z.write_all(&final_buf).into_diagnostic()?;
-
-            drop(z);
+            let final_meta = std::fs::metadata(&outpath).into_diagnostic()?;
+            println!("built {}: {} on disk", outpath.display(), Size::from_bytes(final_meta.len()));
             Ok(())
         }
     }
@@ -782,7 +599,15 @@ struct BuiltTask {
 }
 
 struct OwnedRegion {
-    range: RangeInclusive<u64>,
+    base: u64,
+    sizes: Vec<u64>,
+}
+
+impl OwnedRegion {
+    pub fn contains(&self, addr: u64) -> bool {
+        let size = self.sizes.iter().sum::<u64>();
+        addr >= self.base && addr < (self.base + size)
+    }
 }
 
 struct OwnedAddress {
@@ -984,12 +809,13 @@ fn relink(
         };
 
         owned_regions.insert(orig_name.to_string(), OwnedRegion {
-            range: regalloc.actual.clone(),
+            base: regalloc.base,
+            sizes: regalloc.sizes.clone(),
         });
 
         let name = orig_name.to_ascii_uppercase();
-        let mut base = *regalloc.actual.start();
-        let mut size = (regalloc.actual.end() - regalloc.actual.start()) + 1;
+        let mut base = regalloc.base;
+        let mut size = regalloc.calculate_size();
 
         if name == "RAM" {
             // deduct stack
@@ -1053,7 +879,8 @@ fn relink_for_size(
     let alloc_everything = app.board.chip.memory.iter()
         .map(|(name, regdef)| (name.clone(), TaskAllocation {
             requested: 0,
-            actual: *regdef.value().base.value()..=regdef.value().base.value() + regdef.value().size.value() - 1,
+            base: *regdef.value().base.value(),
+            sizes: vec![*regdef.value().size.value()],
         }))
     .collect();
     relink(env, app, target, targetroot, taskname, inpath, outpath, linker_script, &alloc_everything)?;
@@ -1107,13 +934,12 @@ fn relink_final(
     let elf = goblin::elf::Elf::parse(&file_image).into_diagnostic()?;
 
     let entry_region = owned_regions.iter()
-    .find(|(_name, reg)| elf.entry >= *reg.range.start()
-        && elf.entry <= *reg.range.end());
+        .find(|(_name, reg)| reg.contains(elf.entry));
     let entry_region = entry_region.expect("invalid entry point");
 
     let entry = OwnedAddress {
         region: entry_region.0.to_string(),
-        offset: elf.entry - entry_region.1.range.start(),
+        offset: elf.entry - entry_region.1.base,
     };
     let initial_stack_pointer = initial_stack_pointer.expect("missing RAM region?");
 
