@@ -170,6 +170,7 @@ enum "PeripheralName" {
     //  100 APB1ENR2
     //  101 APB2ENR
 
+    case "Tim2" 0b011_00000 // APB1ENR1 bit 0
     case "Crs" 0b011_11000 // APB1ENR1 bit 24
     case "UsbFs" 0b011_11010 // APB1ENR1 bit 26
 
