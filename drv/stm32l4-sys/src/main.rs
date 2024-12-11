@@ -116,6 +116,33 @@ impl Stm32L4Sys for Server {
 
         Ok(())
     }
+
+    fn set_pins_output(
+        &mut self,
+        _: &userlib::Message<'_>,
+        port: Port,
+        mask: u16,
+    ) -> Result<(),idyll_runtime::ReplyFaultReason> {
+        let gpio = get_port(port);
+        gpio.moder().modify(|w| {
+            for i in 0..16 {
+                if mask & (1 << i) == 0 {
+                    continue;
+                }
+                w.set_moder(i, Moder::OUTPUT);
+            }
+        });
+        Ok(())
+    }
+
+    fn read_pins(
+        &mut self,
+        _full_msg: &userlib::Message<'_>,
+        port: Port,
+    ) -> Result<u16,userlib::ReplyFaultReason> {
+        let gpio = get_port(port);
+        Ok(gpio.idr().read().0 as u16)
+    }
 }
 
 fn get_port(port: Port) -> stm32_metapac::gpio::Gpio {

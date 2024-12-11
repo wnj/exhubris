@@ -61,6 +61,15 @@ method "set_pin_output" {
     auto-retry
 }
 
+method "set_pins_output" {
+    doc "Configures a pin into output mode."
+
+    operation 9
+    arg "port" "Port"
+    arg "mask" "u16"
+    auto-retry
+}
+
 method "set_pin_high" {
     doc "Sets a pin's output state to high. This won't have any immediate
          effect unless the pin is in output mode."
@@ -118,6 +127,15 @@ method "is_pin_high" {
     arg "port" "Port"
     arg "pin" "u8"
     result "bool"
+    auto-retry
+}
+
+method "read_pins" {
+    doc "Senses the current level of pins on a port."
+
+    operation 10
+    arg "port" "Port"
+    result "u16"
     auto-retry
 }
 
