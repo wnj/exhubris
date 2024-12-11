@@ -1,6 +1,7 @@
 chip "STM32G031K8"
 target-triple "thumbv6m-none-eabi"
 vector-table-size 0xC0
+probe-rs-name "STM32G031K8Tx"
 
 memory {
     region "vectors" {
