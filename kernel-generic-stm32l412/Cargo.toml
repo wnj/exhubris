@@ -9,6 +9,10 @@ clock-hsi48-on = []
 
 pwr-vddusb-valid = []
 
+# Rather specialized kernel profiling via fixed GPIOs.
+# Probably of limited usefulness in general.
+kernel-profiling = []
+
 [dependencies]
 cfg-if = "1.0.0"
 cortex-m = { version = "0.7.7", features = ["inline-asm"] }

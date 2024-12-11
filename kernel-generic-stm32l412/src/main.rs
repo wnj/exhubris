@@ -104,5 +104,46 @@ fn main() -> ! {
         p.PWR.cr2.modify(|_, w| w.usv().set_bit());
     }
 
+    if cfg!(feature = "kernel-profiling") {
+        // Set up PA0 and PA1 to pulse on kernel events.
+        p.RCC.ahb2enr.modify(|_, w| w.gpioaen().set_bit());
+        cortex_m::asm::dsb();
+        p.GPIOA.moder.modify(|_, w| {
+            w.moder0().output()
+                .moder1().output()
+        });
+        static EVENTS_TABLE: hubris_kern::profiling::EventsTable = hubris_kern::profiling::EventsTable {
+            syscall_enter: |n| {
+                let gpioa = unsafe { &*device::GPIOA::ptr() };
+                gpioa.bsrr.write(|w| {
+                    w.bs0().set_bit();
+                    if n & 4 == 0 {
+                        w.br1().set_bit();
+                    } else {
+                        w.bs1().set_bit();
+                    }
+                    w
+                });
+            },
+            syscall_exit: || {
+                let gpioa = unsafe { &*device::GPIOA::ptr() };
+                gpioa.bsrr.write(|w| w.br0().set_bit().br1().set_bit());
+            },
+            secondary_syscall_enter: || {
+            },
+            secondary_syscall_exit: || {
+            },
+            isr_enter: || {
+            },
+            isr_exit: || {
+            },
+            timer_isr_enter: || (),
+            timer_isr_exit: || (),
+            context_switch: |_| {
+            },
+        };
+        hubris_kern::profiling::configure_events_table(&EVENTS_TABLE);
+    }
+
     unsafe { hubris_kern::startup::start_kernel(CYCLES_PER_MS) }
 }
