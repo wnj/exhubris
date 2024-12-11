@@ -67,6 +67,9 @@ cfg_if::cfg_if! {
             p.RCC.cfgr.modify(|_, w| unsafe { w.sw().bits(0b11) });
             while p.RCC.cfgr.read().sws() != 0b11 {}
 
+            // Enable flash prefetching to compensate for wait states.
+            p.FLASH.acr.modify(|_, w| w.prften().set_bit());
+
             // k cool
 
         }
