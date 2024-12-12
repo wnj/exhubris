@@ -282,6 +282,18 @@ pub fn sys_enable_irq(notification_mask: u32) {
     unimplemented!()
 }
 
+/// Asks the kernel to enable a hardware interrupt mapped to this task, and
+/// clear its pending status.
+///
+/// Performs the function of `sys_enable_irq`, but also clears the interrupt
+/// controller's pending state for the relevant interrupt(s), if such a concept
+/// exists on this architecture. If the architecture doesn't have a concept of
+/// pending interrupts, this is equivalent to `sys_enable_irq`.
+pub fn sys_enable_irq_and_clear_pending(notification_mask: u32) {
+    let _ = notification_mask;
+    unimplemented!()
+}
+
 /// Copies a chunk of data from borrowed memory into a local buffer.
 ///
 /// This accesses memory borrowed through a lease provided by `lender`. The

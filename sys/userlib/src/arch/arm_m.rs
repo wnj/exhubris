@@ -1060,6 +1060,13 @@ pub fn sys_enable_irq(bits: u32) {
     }
 }
 
+#[inline(always)]
+pub fn sys_enable_irq_and_clear_pending(bits: u32) {
+    unsafe {
+        sys_irq_control_stub(bits, 0b11)
+    }
+}
+
 cfg_if::cfg_if! {
     if #[cfg(any(
         // It'd sure be nice if we could detect proper thumb2

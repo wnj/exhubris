@@ -196,7 +196,9 @@ impl idyll_runtime::NotificationHandler for Server {
             if istr.reset() {
                 emit(Event::Reset);
                 self.device_reset();
-                userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
+                userlib::sys_enable_irq_and_clear_pending(
+                    hubris_notifications::USB_IRQ
+                );
                 return;
             }
 
@@ -250,7 +252,9 @@ impl idyll_runtime::NotificationHandler for Server {
                 }
             }
 
-            userlib::sys_enable_irq(hubris_notifications::USB_IRQ);
+            userlib::sys_enable_irq_and_clear_pending(
+                hubris_notifications::USB_IRQ
+            );
         }
     }
 }
