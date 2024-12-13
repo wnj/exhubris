@@ -48,7 +48,6 @@ fn main() -> ! {
         next_time,
         scan_row: 0,
         keys_down: [[false; config::COLS.len()]; config::ROWS.len()],
-        sys,
         queue: heapless::Deque::new(),
         keyboard: TaskId::gen0(config::KEYBOARD_TASK_INDEX),
     };
@@ -65,8 +64,6 @@ struct Server {
     next_time: u64,
     scan_row: usize,
     keys_down: [[bool; config::COLS.len()]; config::ROWS.len()],
-
-    sys: Sys,
 
     queue: heapless::Deque<KeyEvent, QUEUE_DEPTH>,
 
@@ -97,7 +94,9 @@ impl NotificationHandler for Server {
                 let downs = &mut self.keys_down[self.scan_row];
                 let mut poke_keyboard = false;
                 for (i, (port, pin)) in config::COLS.into_iter().enumerate() {
-                    let down_now = self.sys.is_pin_high(port, pin);
+                    let gpio = get_port(port);
+
+                    let down_now = gpio.idr().read().0 & (1 << pin) != 0;
                     let change = match (downs[i], down_now) {
                         (false, true) => Some(KeyState::Down),
                         (true, false) => Some(KeyState::Up),
@@ -124,15 +123,37 @@ impl NotificationHandler for Server {
                 }
 
                 // Turn off this row and turn on the next.
-                self.sys.set_pin_low(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
+                set_pin_low(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
                 self.scan_row = (self.scan_row + 1) % config::ROWS.len();
-                self.sys.set_pin_high(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
+                set_pin_high(config::ROWS[self.scan_row].0, config::ROWS[self.scan_row].1);
 
                 // Bump our timer to the next deadline.
                 self.next_time += INTERVAL;
                 userlib::sys_set_timer(Some(self.next_time), hubris_notifications::TIMER);
             }
         }
+    }
+}
+
+fn set_pin_low(port: Port, pin: u8) {
+    let gpio = get_port(port);
+    let pin = pin as usize & 0xF;
+    gpio.bsrr().write(|w| w.set_br(pin, true));
+}
+
+fn set_pin_high(port: Port, pin: u8) {
+    let gpio = get_port(port);
+    let pin = pin as usize & 0xF;
+    gpio.bsrr().write(|w| w.set_bs(pin, true));
+}
+
+fn get_port(port: Port) -> stm32_metapac::gpio::Gpio {
+    match port {
+        Port::A => stm32_metapac::GPIOA,
+        Port::B => stm32_metapac::GPIOB,
+        Port::C => stm32_metapac::GPIOC,
+        Port::D => stm32_metapac::GPIOD,
+        Port::H => stm32_metapac::GPIOH,
     }
 }
 

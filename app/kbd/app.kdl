@@ -57,6 +57,16 @@ task "scanner" {
     stack-size 360
     priority 3
     uses-task "sys"
+
+    // The GPIOs are aliased into both this task and SYS, because this task
+    // needs high-rate low-latency access to perform matrix scanning. In
+    // practice, sharing the GPIO blocks in this way is unlikely to cause
+    // problems (famous last words?)
+    uses-peripheral "gpios"
+
+    // However, direct access to peripherals means it now needs a chip feature.
+    features "chip-stm32l412kb"
+
     notification "timer"
     config {
         keyboard "keyboard#scan_event_ready"

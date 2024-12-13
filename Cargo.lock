@@ -1008,6 +1008,7 @@ dependencies = [
  "hubris-task-slots",
  "idyll_runtime",
  "serde",
+ "stm32-metapac",
  "userlib",
 ]
 
