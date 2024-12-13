@@ -64,10 +64,15 @@ task "scanner" {
     // problems (famous last words?)
     uses-peripheral "gpios"
 
+    // While we're at it, we need a hardware timer to do more precise sleeps
+    // than the kernel offers.
+    uses-peripheral "tim2" {
+        irq "irq" "tim-irq"
+    }
+
     // However, direct access to peripherals means it now needs a chip feature.
     features "chip-stm32l412kb"
 
-    notification "timer"
     config {
         keyboard "keyboard#scan_event_ready"
         rows {
