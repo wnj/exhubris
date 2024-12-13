@@ -88,4 +88,5 @@ task "idle" {
     workspace-crate "idle"
     stack-size 128
     priority 5
+    features "insomniac"
 }
