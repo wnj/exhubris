@@ -34,3 +34,4 @@ toml = { version = "0.8.19", features = ["preserve_order"] }
 object = { version = "0.36.5", features = ["write"] }
 hubris-region-alloc = { version = "0.1.0", path = "../alloc" }
 thiserror = "2.0.6"
+blake3 = "1.5.5"

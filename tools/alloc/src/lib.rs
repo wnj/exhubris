@@ -2,7 +2,9 @@
 
 use std::{cmp::Ordering, collections::BTreeMap, fmt::Display, ops::Range};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 pub struct Mem(pub String);
 
 impl Display for Mem {
@@ -11,7 +13,7 @@ impl Display for Mem {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
 pub struct TaskName(pub String);
 
 impl Display for TaskName {

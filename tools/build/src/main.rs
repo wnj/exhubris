@@ -6,7 +6,7 @@ use goblin::elf::program_header::PT_LOAD;
 use miette::{bail, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use hubris_build::{alloc::{allocate_space, TaskAllocation}, appcfg::{self, AppDef, BuildMethod, BuildPlan}, get_target_spec, BuildEnv, TargetSpec};
+use hubris_build::{alloc::{allocate_space, TaskAllocation}, appcfg::{self, AppDef, BuildMethod, BuildPlan}, buildid::BuildId, get_target_spec, BuildEnv, TargetSpec};
 use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 use hubris_build_kconfig as kconfig;
 
@@ -71,6 +71,8 @@ fn main() -> miette::Result<()> {
             let ctx = appcfg::FsContext::from_root(&root);
             let app = appcfg::parse_app(source, &doc, &ctx)?;
 
+            let mut buildid = BuildId::new();
+
             // See if we understand this target.
             let target_spec = get_target_spec(app.board.chip.target_triple.value())
                 .ok_or_else(|| {
@@ -82,10 +84,13 @@ fn main() -> miette::Result<()> {
                         "target spec not defined for triple"
                     )
                 })?;
+            buildid.hash(&target_spec);
 
             // Interrogate the installed toolchain to discover things like the
             // linker path.
             let env = hubris_build::determine_build_env()?;
+
+            buildid.hash(&env);
 
             // Print the kickoff header:
             simple_table([
@@ -113,9 +118,11 @@ fn main() -> miette::Result<()> {
             // partially-linked task binaries.
             let initial_build_dir = workdir.join("build");
             maybe_create_dir(&initial_build_dir).into_diagnostic()?;
+            let task_rlink_text = include_str!("../../../files/task-rlink.x");
+            buildid.eat(task_rlink_text.as_bytes());
             for (name, plan) in &overall_plan.tasks {
                 do_cargo_build(
-                    include_str!("../../../files/task-rlink.x"),
+                    task_rlink_text,
                     plan,
                     LinkStyle::Partial,
                     &targetroot,
@@ -132,7 +139,9 @@ fn main() -> miette::Result<()> {
             let mut size_reqs: BTreeMap<TaskName, TaskInfo> = BTreeMap::new();
             let temp_link_dir = workdir.join("link2");
             maybe_create_dir(&temp_link_dir).into_diagnostic()?;
-            std::fs::write(workdir.join("task-link2.x"), include_str!("../../../files/task-link2.x")).into_diagnostic()?;
+            let task_link2_text = include_str!("../../../files/task-link2.x");
+            buildid.eat(task_link2_text.as_bytes());
+            std::fs::write(workdir.join("task-link2.x"), task_link2_text).into_diagnostic()?;
             for taskname in overall_plan.tasks.keys() {
                 let region_sizes = relink_for_size(
                     &env,
@@ -170,6 +179,9 @@ fn main() -> miette::Result<()> {
             let alloc_begin = Instant::now();
             let allocs = allocate_space(&target_spec, &app.board.chip.memory, &size_reqs, &app.kernel)?;
             let alloc_time = alloc_begin.elapsed();
+
+            buildid.hash(&allocs);
+
             println!("Allocations ({alloc_time:?}):");
 
             let mut table = comfy_table::Table::new();
@@ -239,7 +251,9 @@ fn main() -> miette::Result<()> {
             }
             maybe_create_dir(&dir3).into_diagnostic()?;
             let mut built_tasks = vec![];
-            std::fs::write(workdir.join("task-link3.x"), include_str!("../../../files/task-link3.x")).into_diagnostic()?;
+            let task_link3_text = include_str!("../../../files/task-link3.x");
+            buildid.eat(task_link3_text.as_bytes());
+            std::fs::write(workdir.join("task-link3.x"), task_link3_text).into_diagnostic()?;
             for taskname in overall_plan.tasks.keys() {
                 let built_task = relink_final(
                     &env,
@@ -346,6 +360,8 @@ fn main() -> miette::Result<()> {
 
             kconfig.shared_regions.retain(|name, _| used_shared_regions.contains(name));
 
+            buildid.hash(&kconfig);
+
             {
                 let linker_script_path = tmpdir.join("memory.x");
                 let mut scr = std::fs::File::create(&linker_script_path)
@@ -379,14 +395,20 @@ fn main() -> miette::Result<()> {
                 "HUBRIS_KCONFIG".to_string(),
                 ron::ser::to_string(&kconfig).into_diagnostic()?,
             );
+
+
+            buildid.hash(&overall_plan);
+
             overall_plan.kernel.smuggled_env.insert(
                 "HUBRIS_IMAGE_ID".to_string(),
-                "12345678".to_string(),
+                buildid.finish().to_string(),
             );
 
-            std::fs::write(workdir.join("kernel-link.x"), include_str!("../../../files/kernel-link.x")).into_diagnostic()?;
+            let kernel_link_text = include_str!("../../../files/kernel-link.x");
+            buildid.eat(kernel_link_text.as_bytes());
+            std::fs::write(workdir.join("kernel-link.x"), kernel_link_text).into_diagnostic()?;
             do_cargo_build(
-                include_str!("../../../files/kernel-link.x"),
+                kernel_link_text,
                 &overall_plan.kernel,
                 LinkStyle::Full,
                 &targetroot,

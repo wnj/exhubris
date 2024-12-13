@@ -3,13 +3,15 @@ pub mod alloc;
 pub mod idl;
 pub mod config;
 pub mod bundle;
+pub mod buildid;
 
 use std::{path::PathBuf, process::Command};
 
 use cargo_metadata::Package;
 use miette::{bail, miette, IntoDiagnostic as _};
+use serde::Serialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BuildEnv {
     /// release of toolchain
     pub release: String,
@@ -81,7 +83,7 @@ pub enum BuildablePackage {
     },
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub enum SizeRule {
     /// Allocations must be a power-of-two in size.
     PowerOfTwo,
@@ -89,6 +91,7 @@ pub enum SizeRule {
     MultipleOf(u64),
 }
 
+#[derive(Clone, Debug, Serialize)]
 pub struct TargetSpec {
     /// Rule determining legal allocation sizes on this target.
     pub size_rule: SizeRule,

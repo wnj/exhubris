@@ -4,6 +4,7 @@ use cargo_metadata::Package;
 use indexmap::{IndexMap, IndexSet};
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, SourceSpan};
+use serde::Serialize;
 
 use crate::{config, BuildEnv};
 
@@ -1161,7 +1162,7 @@ pub struct CheckedCfg {
     pub package_metadata: IndexMap<String, Package>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BuildPlan {
     pub method: BuildMethod,
     /// Name of package from Cargo's perspective.
@@ -1186,7 +1187,7 @@ pub struct BuildPlan {
     pub rustflags: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum BuildMethod {
     CargoWorkspaceBuild,
     CargoInstallGit {
@@ -1195,6 +1196,7 @@ pub enum BuildMethod {
     },
 }
 
+#[derive(Clone, Debug, Serialize)]
 pub struct BuildPlans {
     pub tasks: IndexMap<String, BuildPlan>,
     pub kernel: BuildPlan,
