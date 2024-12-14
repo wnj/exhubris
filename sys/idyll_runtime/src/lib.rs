@@ -14,7 +14,12 @@ use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 /// Implemented by operation enum types.
 pub trait ServerOp: TryFrom<u16> {
+    /// Size of buffer required to receive the arguments for any operation (in
+    /// bytes).
     const INCOMING_SIZE: usize;
+
+    /// Size of reply buffer required for a _specific_ operation, in bytes.
+    fn required_reply_space(&self) -> usize;
 }
 
 #[doc(hidden)]
@@ -88,6 +93,9 @@ fn dispatch_inner<S, O>(server: &mut S, rm: &Message<'_>) -> Result<(), ReplyFau
     match O::try_from(rm.operation) {
         Err(_) => Err(ReplyFaultReason::UndefinedOperation),
         Ok(op) => {
+            if rm.reply_capacity < op.required_reply_space() {
+                return Err(ReplyFaultReason::ReplyBufferTooSmall);
+            }
             (PhantomData, server).dispatch_op(op, rm)?;
             Ok(())
         }

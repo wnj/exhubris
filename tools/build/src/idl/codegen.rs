@@ -448,6 +448,17 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
             #(#args)+*
         })
     }).collect::<miette::Result<Vec<_>>>()?;
+    let reply_cases = iface.methods.iter().map(|(name, def)| {
+        let discrim = format_ident!("{}", name.to_case(Case::Pascal));
+        let ty = if let Some(rt) = &def.result {
+            generate_type(rt.value())?
+        } else {
+            quote! { () }
+        };
+        Ok(quote::quote! {
+            #enumname::#discrim => <#ty as hubpack::SerializedSize>::MAX_SIZE
+        })
+    }).collect::<miette::Result<Vec<_>>>()?;
 
     Ok((
         enumname.clone(),
@@ -462,6 +473,11 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
                 const INCOMING_SIZE: usize = idyll_runtime::const_max(&[
                     #(#incoming_sizes),*
                 ]);
+                fn required_reply_space(&self) -> usize {
+                    match self {
+                        #(#reply_cases,)*
+                    }
+                }
             }
 
             impl TryFrom<u16> for #enumname {
