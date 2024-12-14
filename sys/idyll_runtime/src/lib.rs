@@ -12,6 +12,21 @@ use userlib::{LeaseAttributes, MessageOrNotification, Message, TaskDeath, TaskId
 pub use userlib::ReplyFaultReason;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
+/// Metadata delivered with a message, to be used if required.
+///
+/// This is a narrow subset of what the kernel generates, to avoid aliasing the
+/// message buffer and to keep from providing too many ways to do everything.
+/// (For instance, inside an Idyll server, you probably don't need the raw
+/// operation code.)
+///
+/// This could be extended as more things prove necessary.
+pub struct Meta {
+    /// The ID of the task that sent this message.
+    pub sender: TaskId,
+    /// The number of leases the message carried.
+    pub lease_count: usize,
+}
+
 /// Implemented by operation enum types.
 pub trait ServerOp: TryFrom<u16> {
     /// Size of buffer required to receive the arguments for any operation (in

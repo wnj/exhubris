@@ -18,8 +18,8 @@ use core::mem::MaybeUninit;
 
 use hubris_task_slots::SLOTS;
 use drv_stm32l4_sys_api::{Stm32L4Sys as Sys, Port, Pull, PeripheralName};
-use idyll_runtime::NotificationHandler;
-use userlib::{sys_enable_irq_and_clear_pending, Message, ReplyFaultReason, TaskId};
+use idyll_runtime::{NotificationHandler, Meta};
+use userlib::{sys_enable_irq_and_clear_pending, ReplyFaultReason, TaskId};
 
 const INTERVAL: u32 = 62 - 15; // microseconds; fudge factor adjusts for code
                                // execution time
@@ -105,7 +105,7 @@ struct Server {
 impl Scanner for Server {
     fn pop_event(
         &mut self,
-        _: &Message<'_>,
+        _: Meta,
     ) -> Result<Option<KeyEvent>, ReplyFaultReason> {
         Ok(self.queue.pop_front())
     }

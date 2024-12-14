@@ -6,7 +6,7 @@
 use core::mem::MaybeUninit;
 
 use stm32_metapac::gpio::vals::{Idr, Moder, Odr, Pupdr};
-use userlib::Message;
+use idyll_runtime::Meta;
 
 #[export_name = "main"]
 fn main() -> ! {
@@ -28,13 +28,13 @@ fn convert_pin(pin: u8) -> usize {
 struct Server;
 
 impl Stm32L4Sys for Server {
-    fn set_pin_output(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_output(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         gpio.moder().modify(|v| v.set_moder(convert_pin(pin), Moder::OUTPUT));
         Ok(())
     }
 
-    fn set_pin_high(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_high(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         gpio.bsrr().write(|v| {
             v.set_bs(convert_pin(pin), true);
@@ -42,7 +42,7 @@ impl Stm32L4Sys for Server {
         Ok(())
     }
 
-    fn set_pin_low(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_low(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         gpio.bsrr().write(|v| {
             v.set_br(convert_pin(pin), true);
@@ -50,7 +50,7 @@ impl Stm32L4Sys for Server {
         Ok(())
     }
 
-    fn toggle_pin(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn toggle_pin(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         let pin = convert_pin(pin);
         let state = gpio.odr().read().odr(pin) == Odr::HIGH;
@@ -65,7 +65,7 @@ impl Stm32L4Sys for Server {
         Ok(())
     }
 
-    fn set_pin_alternate_mode(&mut self, _: &Message<'_>, port:Port, pin:u8, function:Function) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_alternate_mode(&mut self, _: Meta, port:Port, pin:u8, function:Function) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let pin = convert_pin(pin);
         let gpio = get_port(port);
         let af = function as u8;
@@ -75,19 +75,19 @@ impl Stm32L4Sys for Server {
         Ok(())
     }
 
-    fn set_pin_input(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_input(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         gpio.moder().modify(|v| v.set_moder(convert_pin(pin), Moder::INPUT));
         Ok(())
     }
 
-    fn is_pin_high(&mut self, _: &Message<'_>, port:Port, pin:u8) -> Result<bool,idyll_runtime::ReplyFaultReason> {
+    fn is_pin_high(&mut self, _: Meta, port:Port, pin:u8) -> Result<bool,idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         let idr = gpio.idr().read();
         Ok(idr.idr(usize::from(pin & 0xF)) == Idr::HIGH)
     }
 
-    fn set_pin_pull(&mut self, _: &Message<'_>, port:Port, pin:u8, pull: Option<Pull>) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn set_pin_pull(&mut self, _: Meta, port:Port, pin:u8, pull: Option<Pull>) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let gpio = get_port(port);
         gpio.pupdr().modify(|v| {
             v.set_pupdr(convert_pin(pin), match pull {
@@ -100,7 +100,7 @@ impl Stm32L4Sys for Server {
         Ok(())
     }
 
-    fn enable_clock(&mut self, _: &Message<'_>, peripheral:PeripheralName) -> Result<(),idyll_runtime::ReplyFaultReason> {
+    fn enable_clock(&mut self, _: Meta, peripheral:PeripheralName) -> Result<(),idyll_runtime::ReplyFaultReason> {
         let bits = peripheral as u16;
         let bit_no = usize::from(bits & 0x1F);
         let reg_no = bits >> 5;
@@ -119,7 +119,7 @@ impl Stm32L4Sys for Server {
 
     fn set_pins_output(
         &mut self,
-        _: &userlib::Message<'_>,
+        _: Meta,
         port: Port,
         mask: u16,
     ) -> Result<(),idyll_runtime::ReplyFaultReason> {
@@ -137,7 +137,7 @@ impl Stm32L4Sys for Server {
 
     fn read_pins(
         &mut self,
-        _full_msg: &userlib::Message<'_>,
+        _: Meta,
         port: Port,
     ) -> Result<u16,userlib::ReplyFaultReason> {
         let gpio = get_port(port);

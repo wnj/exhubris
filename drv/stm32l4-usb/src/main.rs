@@ -85,10 +85,10 @@ use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use hid::{HidClassDescriptorType, HidRequestCode};
-use idyll_runtime::{Leased, Read};
+use idyll_runtime::{Leased, Read, Meta};
 use num_traits::FromPrimitive as _;
 use protocol::{Dir, Recipient, RequestTypeType, StdRequestCode};
-use userlib::{Message, ReplyFaultReason, TaskId};
+use userlib::{ReplyFaultReason, TaskId};
 use drv_stm32l4_sys_api::{Stm32L4Sys, Port, Function};
 use stm32_metapac::usb::vals::{EpType, Stat};
 
@@ -263,7 +263,7 @@ impl idyll_runtime::NotificationHandler for Server {
 impl UsbHid for Server {
     fn enqueue_report(
         &mut self,
-        _full_msg: &Message<'_>,
+        _: Meta,
         endpoint: u8,
         data: Leased<Read, u8>,
     ) -> Result<Result<bool, EnqueueError>, ReplyFaultReason> {
@@ -305,7 +305,7 @@ impl UsbHid for Server {
 
     fn get_event(
         &mut self,
-        _full_msg: &Message<'_>,
+        _: Meta,
     ) -> Result<Option<UsbEvent>, ReplyFaultReason> {
         Ok(self.queued_event.take())
     }

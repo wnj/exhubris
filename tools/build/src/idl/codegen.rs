@@ -58,6 +58,10 @@ pub fn generate_server(
                 let Ok(msg_data) = &msg.data else {
                     return Err(userlib::ReplyFaultReason::BadMessageSize);
                 };
+                let meta = idyll_runtime::Meta {
+                    sender: msg.sender,
+                    lease_count: msg.lease_count,
+                };
                 match op {
                     #(#dispatch_cases)*
                 }
@@ -415,7 +419,7 @@ pub fn generate_server_trait_method(
     let name = format_ident!("{name}");
     Ok(quote! {
         #doc
-        fn #name(&mut self, full_msg: &userlib::Message<'_>, #(#args,)*)
+        fn #name(&mut self, meta: idyll_runtime::Meta, #(#args,)*)
             -> #return_type;
     })
 }
@@ -557,7 +561,7 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
     Ok(quote! {
         #deserialize_args
         #leases
-        let r = self.1.#method_name(msg, #(#arg_expansion),*)?;
+        let r = self.1.#method_name(meta, #(#arg_expansion),*)?;
         #respond
         Ok(())
     })
