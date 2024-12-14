@@ -1102,7 +1102,7 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "kern",
- "stm32g0",
+ "stm32-metapac",
 ]
 
 [[package]]
@@ -1818,18 +1818,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "deabea56a8821dcea05d0109f3ab3135f31eb572444e5da203d06149c594c8c6"
 dependencies = [
  "cortex-m",
-]
-
-[[package]]
-name = "stm32g0"
-version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce2fda706a5ca8a4c4c7c965668ff908c10dfeb1c2da581b6a2007ee60ae4787"
-dependencies = [
- "bare-metal 1.0.0",
- "cortex-m",
  "cortex-m-rt",
- "vcell",
 ]
 
 [[package]]
