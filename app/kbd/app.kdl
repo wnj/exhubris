@@ -48,7 +48,7 @@ task "usbhid" {
         irq "irq" "usb-irq"
     }
     config {
-        keyboard "keyboard#usb_event_ready"
+        keyboard "scanner#usb_event_ready"
     }
 }
 
@@ -57,6 +57,7 @@ task "scanner" {
     stack-size 360
     priority 3
     uses-task "sys"
+    uses-task "usbhid"
 
     // The GPIOs are aliased into both this task and SYS, because this task
     // needs high-rate low-latency access to perform matrix scanning. In
@@ -73,8 +74,9 @@ task "scanner" {
     // However, direct access to peripherals means it now needs a chip feature.
     features "chip-stm32l412kb"
 
+    notification "usb_event_ready"
+
     config {
-        keyboard "keyboard#scan_event_ready"
         rows {
             - "A0"
             - "A1"
@@ -84,18 +86,6 @@ task "scanner" {
             - "B1"
         }
     }
-}
-
-task "keyboard" {
-    workspace-crate "keyboard"
-    stack-size 360
-    priority 4
-    uses-task "usbhid"
-    uses-task "sys"
-    uses-task "scanner"
-    notification "timer"
-    notification "usb_event_ready"
-    notification "scan_event_ready"
 }
 
 // Idle task. This must be the lowest priority task.

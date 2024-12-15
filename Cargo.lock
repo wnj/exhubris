@@ -1027,6 +1027,7 @@ name = "kbd-basic-scanner"
 version = "0.1.0"
 dependencies = [
  "drv-stm32l4-sys-api",
+ "drv-stm32l4-usb-api",
  "heapless",
  "hubpack",
  "hubris-build",
@@ -1114,18 +1115,6 @@ dependencies = [
  "cortex-m-rt",
  "kern",
  "stm32l4",
-]
-
-[[package]]
-name = "keyboard"
-version = "0.1.0"
-dependencies = [
- "drv-stm32l4-sys-api",
- "drv-stm32l4-usb-api",
- "hubris-notifications",
- "hubris-task-slots",
- "kbd-basic-scanner-api",
- "userlib",
 ]
 
 [[package]]

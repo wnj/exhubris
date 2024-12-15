@@ -15,21 +15,9 @@ fn main() {
     std::fs::write(&genserver_path, server).unwrap();
 
     let config: Config = hubris_build_util::get_task_config();
-    let Some((task_name, not_name)) = config.keyboard.split_once('#') else {
-        panic!("keyboard signal name should be 'task#notification' but was: {}",
-            config.keyboard);
-    };
-    let Some(task_info) = hubris_build_util::get_task_info(task_name) else {
-        panic!("keyboard signal name references unknown task {task_name}");
-    };
-    let Some(mask) = task_info.notification_mask(not_name) else {
-        panic!("keyboard signal name references unknown notification {not_name}");
-    };
 
     let mut f = std::fs::File::create(outpath.join("config.rs")).unwrap();
     writeln!(f, "pub(crate) mod config {{").unwrap();
-    writeln!(f, "pub const KEYBOARD_TASK_INDEX: u16 = {};", task_info.get_index()).unwrap();
-    writeln!(f, "pub const KEYBOARD_NOTIFICATION_MASK: u32 = {};", mask).unwrap();
 
     writeln!(f, "use drv_stm32l4_sys_api::Port;").unwrap();
 
@@ -43,13 +31,15 @@ fn main() {
         writeln!(f, "];").unwrap();
     }
 
+    writeln!(f, "pub const ROW_COUNT: usize = {};", config.rows.len()).unwrap();
+    writeln!(f, "pub const COL_COUNT: usize = {};", config.cols.len()).unwrap();
+
     writeln!(f, "}}").unwrap();
     drop(f);
 }
 
 #[derive(Deserialize)]
 struct Config {
-    keyboard: String,
     rows: Vec<String>,
     cols: Vec<String>,
 }
