@@ -48,7 +48,8 @@ task "usbhid" {
         irq "irq" "usb-irq"
     }
     config {
-        keyboard "scanner#usb_event_ready"
+        on_event "scanner#usb_event_ready"
+        on_report "scanner#usb_report_needed"
     }
 }
 
@@ -75,6 +76,7 @@ task "scanner" {
     features "chip-stm32l412kb"
 
     notification "usb_event_ready"
+    notification "usb_report_needed"
 
     config {
         rows {

@@ -91,7 +91,9 @@ fn main() -> ! {
     loop {
         idyll_runtime::dispatch_or_event(
             &mut server,
-            hubris_notifications::TIM_IRQ | hubris_notifications::USB_EVENT_READY,
+            hubris_notifications::TIM_IRQ
+                | hubris_notifications::USB_EVENT_READY
+                | hubris_notifications::USB_REPORT_NEEDED,
             &mut buffer,
         );
     }
@@ -182,9 +184,10 @@ impl NotificationHandler for Server {
             }
         }
 
+        let mut deliver_report_now = false;
+
         if bits & hubris_notifications::USB_EVENT_READY != 0 {
             if let Some(event) = self.usb.get_event() {
-                let mut deliver_report_now = false;
                 match event {
                     UsbEvent::Reset => {
                         self.config = None;
@@ -199,15 +202,15 @@ impl NotificationHandler for Server {
                         let n = BOOT_KBD_DESC.len().min(usize::from(length));
                         self.usb.enqueue_report(0, &BOOT_KBD_DESC[..n]).ok();
                     }
-                    UsbEvent::ReportNeeded => {
-                        deliver_report_now = true;
-                    }
-                }
-                if deliver_report_now {
-                    let report = self.generate_boot_report();
-                    self.usb.enqueue_report(1, &report).ok();
                 }
             }
+        }
+        if bits & hubris_notifications::USB_REPORT_NEEDED != 0 {
+            deliver_report_now = true;
+        }
+        if deliver_report_now {
+            let report = self.generate_boot_report();
+            self.usb.enqueue_report(1, &report).ok();
         }
     }
 }

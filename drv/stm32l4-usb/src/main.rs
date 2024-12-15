@@ -22,6 +22,62 @@
 //! (configurable) notification. It then calls back through our IPC interface to
 //! make things happen.
 //!
+//! There are two notifications. One indicates that an outgoing report needs to
+//! be prepared. The other indicates all other events. These are split because
+//! "outgoing report" is by far the most common case. The keyboard task can just
+//! respond to this notification by calling back with `enqueue_report`; if the
+//! notification was spurious, we'll just return `false` and everyone moves on.
+//!
+//! In ASCII art form:
+//!
+//! ```text
+//! +-----------+          +---------+                         +-----------+
+//! | Hardware  |          | USBHID  |                         | Keyboard  |
+//! +-----------+          +---------+                         +-----------+
+//!       |                     |                                    |
+//!       | IRQ                 |                                    |
+//!       |-------------------->|                                    |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | is asleep |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     | posts REPORT notification.         |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |                      ------------\ |
+//!       |                     |                      | wakes up! |-|
+//!       |                     |                      |-----------| |
+//!       |                     |                                    |
+//!       |                     |       sends ENQUEUE_REPORT message |
+//!       |                     |<-----------------------------------|
+//!       |                     | -----------------------\           |
+//!       |                     |-| copies into USB SRAM |           |
+//!       |                     | |----------------------|           |
+//!       |                     |                                    |
+//!       |      endpoint ready |                                    |
+//!       |<--------------------|                                    |
+//!       |                     |                                    |
+//!       |                     | empty reply                        |
+//!       |                     |----------------------------------->|
+//!       |                     | ---------------------\             |
+//!       |                     |-| goes back to sleep |             |
+//!       |                     | |--------------------|             |
+//!       |                     |        --------------------------\ |
+//!       |                     |        | also goes back to sleep |-|
+//!       |                     |        |-------------------------| |
+//!       |                     |                                    |
+//! ```
+//!
+//! So that can be handled with only five context switches, including the
+//! interrupt.
+//!
+//! For the "all other events" case, the keyboard task has to call back up to
+//! twice: once to `get_event` and find out what happened, and possibly once
+//! with `enqueue_report` to deliver data. This requires up to seven context
+//! switches.
+//!
 //! In ASCII art form:
 //!
 //! ```text
@@ -150,7 +206,8 @@ fn main() -> ! {
         usb,
         pending_address: None,
         state: DeviceState::Powered,
-        keyboard_task: TaskId::gen0(KEYBOARD_TASK_INDEX),
+        event_task: TaskId::gen0(EVENT_TASK_INDEX),
+        report_task: TaskId::gen0(REPORT_TASK_INDEX),
         expected_out: None,
         queued_event: None,
     };
@@ -172,7 +229,8 @@ struct Server {
     usb: stm32_metapac::usb::Usb,
     pending_address: Option<u8>,
     state: DeviceState,
-    keyboard_task: TaskId,
+    event_task: TaskId,
+    report_task: TaskId,
     expected_out: Option<hid::OutKind>,
     queued_event: Option<UsbEvent>,
 }
@@ -272,10 +330,17 @@ impl UsbHid for Server {
                 if data.len() > 0x40 {
                     return Err(ReplyFaultReason::BadLeases);
                 }
+                let endpoint = endpoint as usize;
+                // Don't write a report if we might be racing delivery.
+                if self.usb.epr(endpoint).read().stat_tx() != Stat::NAK {
+                    // Didn't need this, thanks!
+                    return Ok(Ok(false));
+                }
+
                 // Amortize the syscall overhead a _little bit_ without having
                 // to burn 64 bytes of stack.
                 let mut xfer_buffer = [0; 8];
-                let mut sram_offset = usbsram::get_ep_tx_offset(endpoint as usize);
+                let mut sram_offset = usbsram::get_ep_tx_offset(endpoint);
                 for i in (0..data.len()).step_by(8) {
                     let chunk_end = usize::min(data.len(), i + 8);
                     // Yes, LLVM should be able to see that this is < 8, but it
@@ -291,8 +356,8 @@ impl UsbHid for Server {
                     usbsram::write_bytes(sram_offset, chunk_buffer);
                     sram_offset += chunk_len;
                 }
-                usbsram::set_ep_tx_count(endpoint as usize, data.len() as u16);
-                self.configure_response(endpoint as usize, Stat::VALID, Stat::VALID);
+                usbsram::set_ep_tx_count(endpoint, data.len() as u16);
+                self.configure_response(endpoint, Stat::VALID, Stat::VALID);
                 emit(Event::HidReportReady);
                 Ok(Ok(true))
             }
@@ -486,20 +551,35 @@ impl Server {
             w.set_ea(1);
         });
 
-        self.poke_keyboard_task(UsbEvent::Configured);
+        self.poke_event_task(UsbEvent::Configured);
     }
 
-    fn poke_keyboard_task(&mut self, event: UsbEvent) {
+    fn poke_event_task(&mut self, event: UsbEvent) {
         emit(Event::PokedKeyboard);
         self.queued_event = Some(event);
         loop {
-            match userlib::sys_post(self.keyboard_task, KEYBOARD_NOTIFICATION_MASK) {
+            match userlib::sys_post(self.event_task, EVENT_NOTIFICATION_MASK) {
                 Ok(()) => break,
                 Err(dead) => {
                     // Update and try again. Since we're higher priority, this
                     // shouldn't loop more than once.
-                    self.keyboard_task =
-                        self.keyboard_task.with_generation(dead.new_generation());
+                    self.event_task =
+                        self.event_task.with_generation(dead.new_generation());
+                }
+            }
+        }
+    }
+
+    fn poke_report_task(&mut self) {
+        emit(Event::PokedKeyboard);
+        loop {
+            match userlib::sys_post(self.report_task, REPORT_NOTIFICATION_MASK) {
+                Ok(()) => break,
+                Err(dead) => {
+                    // Update and try again. Since we're higher priority, this
+                    // shouldn't loop more than once.
+                    self.report_task =
+                        self.report_task.with_generation(dead.new_generation());
                 }
             }
         }
@@ -512,7 +592,7 @@ impl Server {
                     Some(HidClassDescriptorType::Report) => {
                         emit(Event::HidDescriptor);
                         // HID Report Descriptor
-                        self.poke_keyboard_task(UsbEvent::ReportDescriptorNeeded {
+                        self.poke_event_task(UsbEvent::ReportDescriptorNeeded {
                             length: setup.length.get(),
                         });
                     }
@@ -570,7 +650,7 @@ impl Server {
         // another one. Note that the hardware flips the EP to NAK after
         // transmission, we shouldn't have to do that.
         emit(Event::HidReportCollected);
-        self.poke_keyboard_task(UsbEvent::ReportNeeded);
+        self.poke_report_task();
     }
 
     fn on_out_iface(&mut self, ep: usize) {
