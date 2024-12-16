@@ -55,7 +55,7 @@ task "usbhid" {
 
 task "scanner" {
     workspace-crate "kbd-basic-scanner"
-    stack-size 360
+    stack-size 512
     priority 3
     uses-task "sys"
     uses-task "usbhid"

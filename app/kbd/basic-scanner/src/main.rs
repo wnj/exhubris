@@ -87,6 +87,12 @@ fn main() -> ! {
         queue: heapless::Deque::new(),
         usb,
         config: None,
+        layers: LayerSet {
+            layers: &mut [
+                (&CANNED_LAYER_0, true),
+                (&CANNED_LAYER_1, false),
+            ],
+        },
     };
     loop {
         idyll_runtime::dispatch_or_event(
@@ -111,7 +117,7 @@ fn claim_physical_table() -> &'static mut [[PhysKey; config::COL_COUNT]; config:
     unsafe { &mut *addr_of_mut!(PHYSICAL) }
 }
 
-struct Server {
+struct Server<'a> {
     tim: stm32_metapac::timer::TimGp32,
     scan_row: usize,
     phys_table: &'static mut [[PhysKey; config::COL_COUNT]; config::ROW_COUNT] ,
@@ -120,9 +126,11 @@ struct Server {
 
     usb: UsbHid,
     config: Option<Config>,
+
+    layers: LayerSet<'a>,
 }
 
-impl Scanner for Server {
+impl Scanner for Server<'_> {
     fn pop_event(
         &mut self,
         _: Meta,
@@ -131,7 +139,7 @@ impl Scanner for Server {
     }
 }
 
-impl NotificationHandler for Server {
+impl NotificationHandler for Server<'_> {
     fn handle_notification(&mut self, bits: u32) {
         if bits & hubris_notifications::TIM_IRQ != 0 {
             // Advance key scanning, but only if time has really elapsed. (This
@@ -153,12 +161,9 @@ impl NotificationHandler for Server {
                 // Read column inputs
                 let row = &mut self.phys_table[self.scan_row];
                 for (i, (port, pin)) in config::COLS.into_iter().enumerate() {
-                    // Fake scan row:
-                    let sym = KeySym::HidStd((i + self.scan_row * config::COL_COUNT + 4) as u8);
                     let gpio = get_port(port);
-
                     let observed_state = if gpio.idr().read().0 & (1 << pin) != 0 {
-                        PhysState::Closed(sym)
+                        PhysState::Closed(self.layers.get(self.scan_row, i))
                     } else {
                         PhysState::Open
                     };
@@ -209,18 +214,52 @@ impl NotificationHandler for Server {
             deliver_report_now = true;
         }
         if deliver_report_now {
+            self.process_meta();
             let report = self.generate_boot_report();
             self.usb.enqueue_report(1, &report).ok();
         }
     }
 }
 
-impl Server {
+impl Server<'_> {
+    pub fn process_meta(&mut self) {
+        // Make a first pass handling all meta-keys, since they affect the
+        // results of the next pass.
+        for row in self.phys_table.iter_mut() {
+            for key in row {
+                let (before, after) = (key.get_handled_sym(), key.get_sym());
+                match (before, after) {
+                    (Some(KeySym::Layer { index, action }), None) => {
+                        // Layer-related key is released.
+                        match action {
+                            LayerAction::EnableHold => {
+                                self.layers.set_enable(usize::from(index), false);
+                            }
+                        }
+                        key.mark_as_handled();
+                    }
+                    (None, Some(KeySym::Layer { index, action })) => {
+                        // Layer-related key is pressed.
+                        match action {
+                            LayerAction::EnableHold => {
+                                self.layers.set_enable(usize::from(index), true);
+                            }
+                        }
+                        key.mark_as_handled();
+                    }
+                    (_, _) => (),
+                }
+            }
+        }
+    }
+
     pub fn generate_boot_report(&self) -> [u8; 8] {
         let mut non_modifier_key_count = 0;
         let mut report = [0; 8];
 
-        'entire_loop:
+        // In the second pass, we handle all reporting keys subject to the
+        // effects of the previous pass.
+        'generate_loop:
         for row in &*self.phys_table {
             for key in row {
                 if let Some(sym) = key.get_sym() {
@@ -237,9 +276,12 @@ impl Server {
                                 } else {
                                     // Welp, we've filled the whole dang thing
                                     report[2..].fill(0x01);
-                                    break 'entire_loop;
+                                    break 'generate_loop;
                                 }
                             }
+
+                            // Handled above:
+                            KeySym::Layer { .. } => (),
                         }
                     }
                 }
@@ -284,12 +326,18 @@ struct PhysKey {
     /// Debouncing timer; when `None`, the key is thought stable. When
     /// `Some(t)`, there are `t` scans remaining before we flip it.
     transition: Option<NonZeroU8>,
+    /// The state of the key that was last observed by the higher level
+    /// processing loop. This can be used to determine when a particular key is
+    /// _newly_ pressed or released, which we mostly need for internally handled
+    /// function keys.
+    handled_state: PhysState,
 }
 
 impl PhysKey {
     const DEFAULT: Self = Self {
         state: PhysState::Open,
         transition: None,
+        handled_state: PhysState::Open,
     };
     const INTERVAL: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(5) };
 
@@ -334,25 +382,47 @@ impl PhysKey {
     /// Returns the active keysym if if this key is currently considered to be
     /// down, `None` otherwise.
     fn get_sym(&self) -> Option<KeySym> {
-        if let PhysState::Closed(sym) = self.state {
-            Some(sym)
+        self.state.as_closed()
+    }
+
+    fn get_handled_sym(&self) -> Option<KeySym> {
+        self.handled_state.as_closed()
+    }
+
+    fn mark_as_handled(&mut self) {
+        self.handled_state = self.state;
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+enum PhysState {
+    #[default]
+    Open,
+    Closed(Option<KeySym>),
+}
+
+impl PhysState {
+    fn as_closed(self) -> Option<KeySym> {
+        if let PhysState::Closed(sym) = self {
+            sym
         } else {
             None
         }
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-enum PhysState {
-    #[default]
-    Open,
-    Closed(KeySym),
-}
-
-// TODO better type for this.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum KeySym {
     HidStd(u8),
+    Layer {
+        index: u8,
+        action: LayerAction,
+    },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum LayerAction {
+    EnableHold,
 }
 
 impl KeySym {
@@ -418,6 +488,68 @@ static BOOT_KBD_DESC: [u8; 62] = [
     0x81, 0x00,       //      Input,
     0xC0              //  End Collection
 ];
+
+enum LayerSym {
+    DeadKey,
+    Sym(KeySym),
+    Transparent,
+}
+
+struct Layer {
+    syms: &'static [[LayerSym; config::COL_COUNT]; config::ROW_COUNT],
+}
+
+struct LayerSet<'a> {
+    layers: &'a mut [(&'static Layer, bool)],
+}
+
+impl LayerSet<'_> {
+    pub fn get(&self, row: usize, col: usize) -> Option<KeySym> {
+        for (layer, enable) in self.layers.iter().rev() {
+            if !*enable {
+                continue;
+            }
+
+            match layer.syms[row][col] {
+                LayerSym::DeadKey => return None,
+                LayerSym::Sym(sym) => return Some(sym),
+                LayerSym::Transparent => (),
+            }
+        }
+
+        None
+    }
+
+    pub fn set_enable(&mut self, index: usize, flag: bool) {
+        self.layers[index].1 = flag;
+    }
+}
+
+static CANNED_LAYER_0: Layer = Layer {
+    syms: &[
+        [
+            LayerSym::Sym(KeySym::Layer { index: 1, action: LayerAction::EnableHold }),
+            LayerSym::Sym(KeySym::HidStd(0x04)),
+        ],
+        [
+            LayerSym::Sym(KeySym::HidStd(0x05)),
+            LayerSym::Sym(KeySym::HidStd(0x06)),
+        ],
+    ],
+};
+
+static CANNED_LAYER_1: Layer = Layer {
+    syms: &[
+        [
+            LayerSym::Transparent,
+            LayerSym::Sym(KeySym::HidStd(0x1E)),
+        ],
+        [
+            LayerSym::Sym(KeySym::HidStd(0x1F)),
+            LayerSym::Sym(KeySym::HidStd(0x20)),
+        ],
+    ],
+};
 
 include!(concat!(env!("OUT_DIR"), "/generated_server.rs"));
 include!(concat!(env!("OUT_DIR"), "/config.rs"));
