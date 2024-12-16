@@ -9,6 +9,10 @@ clock-64mhz-hsi16 = []
 [dependencies]
 cortex-m = { version = "0.7.7", features = ["inline-asm"] }
 cortex-m-rt = "0.7.5"
-#hubris-kern = {package = "kern", git = "https://github.com/oxidecomputer/hubris.git", features = ["nano"]}
-hubris-kern = {package = "kern", git = "https://github.com/cbiffle/hubris-fork.git", branch = "cbiffle/exhubris-fixes", features = ["nano"]}
 stm32-metapac = {version = "15.0.0", features = ["rt", "stm32g031k8"]}
+
+[dependencies.hubris-kern]
+package = "kern"
+git = "https://github.com/cbiffle/hubris-fork.git"
+branch = "cbiffle/exhubris-fixes"
+features = ["nano", "stack-watermark"]
