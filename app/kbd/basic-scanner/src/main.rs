@@ -1,15 +1,36 @@
-//! Basic GPIO keyboard matrix scanner.
+//! Increasingly non-basic GPIO keyboard matrix scanner.
+//!
+//! # Scanning
 //!
 //! This scans a rectangular matrix by setting one "row" pin high at a time,
-//! waiting for a bit, and then reading the state of all "column" pins. Any
-//! changes are queued up for retrieval by another task.
+//! waiting for a bit, and then reading the state of all "column" pins. These
+//! states are fed through per-key debouncing logic to produce a model of the
+//! state of all physical switches.
 //!
-//! Currently, this uses the kernel general-purpose timer, which means that (by
-//! default) it's restricted to millisecond precision. This limits the maximum
-//! scan rate to `1000 / num_rows` Hz, which is slow by modern standards. This
-//! could be fixed by enlisting a hardware timer to generate faster interrupts,
-//! or by using DMA to perform the scan, both of which are currently out of
-//! scope for this _basic_ scanner implementation.
+//! Scanning is performed under control of a hardware timer (currently TIM2) to
+//! get higher interrupt rates than the kernel timer can provide. The timing is
+//! set up to scan at roughly 16 kHz, so that we can handle a 16-row matrix with
+//! a 1 kHz update rate.
+//!
+//! Currently, debouncing is performed in terms of scan passes, not time.
+//! Because scanning is pretty regular, this doesn't seem like a problem yet,
+//! but may bear rethinking down the road.
+//!
+//!
+//! # Layers and layouts
+//!
+//! The physical switches are combined with a _layer set_ to determine what
+//! logical keys are being pressed. Logical keys include both "real" keys
+//! defined in the USB HID spec, and also _meta_ keys that affect the operation
+//! of the keyboard, such as layer shift keys.
+//!
+//!
+//! # Report production
+//!
+//! We produce reports when poked by the USB driver via the `USB_REPORT_NEEDED`
+//! notification. To produce a report, we process the state of the meta keys
+//! (since they affect the other keys) and then generate a HID report describing
+//! the "real" keys.
 
 #![no_std]
 #![no_main]
