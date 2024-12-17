@@ -12,9 +12,29 @@ use userlib::{LeaseAttributes, MessageOrNotification, Message, TaskDeath, TaskId
 pub use userlib::ReplyFaultReason;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
+/// Metadata delivered with a message, to be used if required.
+///
+/// This is a narrow subset of what the kernel generates, to avoid aliasing the
+/// message buffer and to keep from providing too many ways to do everything.
+/// (For instance, inside an Idyll server, you probably don't need the raw
+/// operation code.)
+///
+/// This could be extended as more things prove necessary.
+pub struct Meta {
+    /// The ID of the task that sent this message.
+    pub sender: TaskId,
+    /// The number of leases the message carried.
+    pub lease_count: usize,
+}
+
 /// Implemented by operation enum types.
 pub trait ServerOp: TryFrom<u16> {
+    /// Size of buffer required to receive the arguments for any operation (in
+    /// bytes).
     const INCOMING_SIZE: usize;
+
+    /// Size of reply buffer required for a _specific_ operation, in bytes.
+    fn required_reply_space(&self) -> usize;
 }
 
 #[doc(hidden)]
@@ -88,6 +108,9 @@ fn dispatch_inner<S, O>(server: &mut S, rm: &Message<'_>) -> Result<(), ReplyFau
     match O::try_from(rm.operation) {
         Err(_) => Err(ReplyFaultReason::UndefinedOperation),
         Ok(op) => {
+            if rm.reply_capacity < op.required_reply_space() {
+                return Err(ReplyFaultReason::ReplyBufferTooSmall);
+            }
             (PhantomData, server).dispatch_op(op, rm)?;
             Ok(())
         }

@@ -37,7 +37,10 @@ pub fn sys_panic(msg: &[u8]) -> ! {
 ///
 /// On success, returns a pair of `(response_code, reply_length)`, giving the
 /// server-generated response code and the number of bytes written into
-/// `incoming` as a reply.
+/// `incoming` as a reply. `reply_length` is guaranteed by the kernel to be less
+/// than or equal to `incoming.len()`, so it is safe to use it to slice
+/// `incoming` without bounds checks by doing
+/// `incoming.get_unchecked_mut(..reply_length)`.
 ///
 /// # Errors
 ///
@@ -67,6 +70,10 @@ pub fn sys_send(
 ///
 /// Since the kernel cannot restart, this avoids the code related to the
 /// `TaskDeath` error and simplifies callers.
+///
+/// As with `sys_send`, the kernel guarantees that the `usize` returned is less
+/// than or equal to `incoming.len()`, making it safe to use it to slice
+/// `incoming` without checks.
 pub fn sys_send_to_kernel(
     operation: u16,
     outgoing: &[u8],
@@ -278,6 +285,18 @@ pub fn sys_get_timer() -> TimerSettings {
 /// behavior to allow for simulated interrupts in test, but so far this has
 /// always indicated a programming error.)
 pub fn sys_enable_irq(notification_mask: u32) {
+    let _ = notification_mask;
+    unimplemented!()
+}
+
+/// Asks the kernel to enable a hardware interrupt mapped to this task, and
+/// clear its pending status.
+///
+/// Performs the function of `sys_enable_irq`, but also clears the interrupt
+/// controller's pending state for the relevant interrupt(s), if such a concept
+/// exists on this architecture. If the architecture doesn't have a concept of
+/// pending interrupts, this is equivalent to `sys_enable_irq`.
+pub fn sys_enable_irq_and_clear_pending(notification_mask: u32) {
     let _ = notification_mask;
     unimplemented!()
 }

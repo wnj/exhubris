@@ -58,6 +58,10 @@ pub fn generate_server(
                 let Ok(msg_data) = &msg.data else {
                     return Err(userlib::ReplyFaultReason::BadMessageSize);
                 };
+                let meta = idyll_runtime::Meta {
+                    sender: msg.sender,
+                    lease_count: msg.lease_count,
+                };
                 match op {
                     #(#dispatch_cases)*
                 }
@@ -415,7 +419,7 @@ pub fn generate_server_trait_method(
     let name = format_ident!("{name}");
     Ok(quote! {
         #doc
-        fn #name(&mut self, full_msg: &userlib::Message<'_>, #(#args,)*)
+        fn #name(&mut self, meta: idyll_runtime::Meta, #(#args,)*)
             -> #return_type;
     })
 }
@@ -448,6 +452,17 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
             #(#args)+*
         })
     }).collect::<miette::Result<Vec<_>>>()?;
+    let reply_cases = iface.methods.iter().map(|(name, def)| {
+        let discrim = format_ident!("{}", name.to_case(Case::Pascal));
+        let ty = if let Some(rt) = &def.result {
+            generate_type(rt.value())?
+        } else {
+            quote! { () }
+        };
+        Ok(quote::quote! {
+            #enumname::#discrim => <#ty as hubpack::SerializedSize>::MAX_SIZE
+        })
+    }).collect::<miette::Result<Vec<_>>>()?;
 
     Ok((
         enumname.clone(),
@@ -462,6 +477,11 @@ fn generate_server_op_enum(iface: &InterfaceDef) -> miette::Result<(Ident, proc_
                 const INCOMING_SIZE: usize = idyll_runtime::const_max(&[
                     #(#incoming_sizes),*
                 ]);
+                fn required_reply_space(&self) -> usize {
+                    match self {
+                        #(#reply_cases,)*
+                    }
+                }
             }
 
             impl TryFrom<u16> for #enumname {
@@ -541,7 +561,7 @@ fn generate_server_method_dispatch(name: &str, def: &MethodDef) -> miette::Resul
     Ok(quote! {
         #deserialize_args
         #leases
-        let r = self.1.#method_name(msg, #(#arg_expansion),*)?;
+        let r = self.1.#method_name(meta, #(#arg_expansion),*)?;
         #respond
         Ok(())
     })

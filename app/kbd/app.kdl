@@ -48,18 +48,37 @@ task "usbhid" {
         irq "irq" "usb-irq"
     }
     config {
-        keyboard "keyboard#usb_event_ready"
+        on_event "scanner#usb_event_ready"
+        on_report "scanner#usb_report_needed"
     }
 }
 
 task "scanner" {
     workspace-crate "kbd-basic-scanner"
-    stack-size 360
+    stack-size 512
     priority 3
     uses-task "sys"
-    notification "timer"
+    uses-task "usbhid"
+
+    // The GPIOs are aliased into both this task and SYS, because this task
+    // needs high-rate low-latency access to perform matrix scanning. In
+    // practice, sharing the GPIO blocks in this way is unlikely to cause
+    // problems (famous last words?)
+    uses-peripheral "gpios"
+
+    // While we're at it, we need a hardware timer to do more precise sleeps
+    // than the kernel offers.
+    uses-peripheral "tim2" {
+        irq "irq" "tim-irq"
+    }
+
+    // However, direct access to peripherals means it now needs a chip feature.
+    features "chip-stm32l412kb"
+
+    notification "usb_event_ready"
+    notification "usb_report_needed"
+
     config {
-        keyboard "keyboard#scan_event_ready"
         rows {
             - "A0"
             - "A1"
@@ -71,21 +90,10 @@ task "scanner" {
     }
 }
 
-task "keyboard" {
-    workspace-crate "keyboard"
-    stack-size 360
-    priority 4
-    uses-task "usbhid"
-    uses-task "sys"
-    uses-task "scanner"
-    notification "timer"
-    notification "usb_event_ready"
-    notification "scan_event_ready"
-}
-
 // Idle task. This must be the lowest priority task.
 task "idle" {
     workspace-crate "idle"
     stack-size 128
     priority 5
+    features "insomniac"
 }

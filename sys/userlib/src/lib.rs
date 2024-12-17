@@ -26,6 +26,7 @@
 //! - [`sys_borrow_read`]
 //! - [`sys_borrow_write`]
 //! - [`sys_enable_irq`]
+//!   - Variant: [`sys_enable_irq_and_clear_pending`]
 //! - [`sys_post`]
 //! - [`sys_panic`]
 //! - [`sys_recv`]
@@ -483,6 +484,9 @@ pub use self::arch::sys_get_timer;
 
 #[doc(inline)]
 pub use self::arch::sys_enable_irq;
+
+#[doc(inline)]
+pub use self::arch::sys_enable_irq_and_clear_pending;
 
 #[doc(inline)]
 pub use self::arch::sys_borrow_info;

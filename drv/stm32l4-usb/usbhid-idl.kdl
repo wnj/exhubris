@@ -40,7 +40,6 @@ enum "UsbEvent" {
     case "ReportDescriptorNeeded" {
         field "length" "u16"
     }
-    case "ReportNeeded"
 
     rust-derive "Copy" "Clone" "Debug"
 }

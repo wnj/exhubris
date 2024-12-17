@@ -23,8 +23,11 @@ fn main() -> ! {
         while let Some(fault_index) = kipc::find_faulted_task(next_task) {
             let fault_index = usize::from(fault_index);
             kipc::reinitialize_task(fault_index, kipc::NewState::Runnable);
-            // keep moving
-            next_task = fault_index + 1;
+            // Keep moving. Because of the API guarantees on the `fault_index`
+            // value from the kernel, we can use wrapping add to advance this
+            // without risk of it actually wrapping, to avoid a panic when
+            // overflow checks are enabled.
+            next_task = fault_index.wrapping_add(1);
         }
     }
 }

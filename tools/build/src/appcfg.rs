@@ -4,6 +4,7 @@ use cargo_metadata::Package;
 use indexmap::{IndexMap, IndexSet};
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, SourceSpan};
+use serde::Serialize;
 
 use crate::{config, BuildEnv};
 
@@ -104,6 +105,9 @@ pub struct TaskDef {
 
     /// Explicit stack size for task.
     pub stack_size: Spanned<u64>,
+
+    // Don't start this task automatically, wait for the supervisor to do it.
+    pub wait_for_reinit: bool,
 
     /// Priority of the task (lower numbers are more important).
     pub priority: Spanned<u8>,
@@ -563,9 +567,12 @@ pub fn parse_task(
             })
             .collect::<miette::Result<IndexMap<_, _>>>()?;
 
+        let wait_for_reinit = get_unique_bool(doc, "wait-for-reinit")?;
+
         Ok(TaskDef {
             name: name.to_string(),
             stack_size,
+            wait_for_reinit,
             package_source,
             priority,
             cargo_features: unique_features.into_iter().collect(),
@@ -1155,7 +1162,7 @@ pub struct CheckedCfg {
     pub package_metadata: IndexMap<String, Package>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BuildPlan {
     pub method: BuildMethod,
     /// Name of package from Cargo's perspective.
@@ -1180,7 +1187,7 @@ pub struct BuildPlan {
     pub rustflags: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum BuildMethod {
     CargoWorkspaceBuild,
     CargoInstallGit {
@@ -1189,6 +1196,7 @@ pub enum BuildMethod {
     },
 }
 
+#[derive(Clone, Debug, Serialize)]
 pub struct BuildPlans {
     pub tasks: IndexMap<String, BuildPlan>,
     pub kernel: BuildPlan,

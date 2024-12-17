@@ -1,5 +1,0 @@
-# HID keyboard engine
-
-This task cooperates with `stm32l4-usb` to implement a basic HID keyboard.
-
-See the docs in `src/main.rs`.

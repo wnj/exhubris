@@ -2,10 +2,11 @@ use std::{collections::BTreeMap, ops::{RangeInclusive, Range}};
 use indexmap::IndexMap;
 use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 use miette::bail;
+use serde::Serialize;
 
 use crate::{appcfg::{KernelDef, RegionDef, Spanned}, SizeRule, TargetSpec};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Allocations {
     pub tasks: IndexMap<String, BTreeMap<String, TaskAllocation>>,
     pub kernel: KernelAllocation,
@@ -25,7 +26,7 @@ impl Allocations {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct KernelAllocation {
     pub by_region: BTreeMap<Mem, Range<u64>>,
     pub stack: Range<u64>,
@@ -37,7 +38,7 @@ impl Default for KernelAllocation {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct TaskAllocation {
     pub requested: u64,
     pub base: u64,

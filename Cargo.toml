@@ -9,7 +9,6 @@ members = [
     "tools/hubake",
     "tools/alloc",
 
-    "app/kbd/keyboard",
     "app/kbd/basic-scanner",
     "app/kbd/basic-scanner-api",
 ]
