@@ -42,8 +42,8 @@ task "echo" {
         irq "irq" "usart-irq"
     }
     config {
-        uart-clock-hz 16_000_000
-        baud-rate 9_600
+        uart-clock-hz 64_000_000
+        baud-rate 115_200
         pins {
             - name="A2" af=1
             - name="A3" af=1
@@ -67,9 +67,32 @@ task "ping" {
     uses-task "sys"
 }
 
+// blink LED
+task "blinky" {
+    workspace-crate "blinky"
+    stack-size 160
+    priority 3
+    uses-task "sys"
+
+    notification "timer-blinky"
+}
+
+// 7-segment hex display
+task "display" {
+   workspace-crate "display"
+    stack-size 256
+    priority 3
+    uses-task "sys"
+
+    notification "timer-display"
+}
+
 // Idle task. This must be the lowest priority task.
 task "idle" {
     workspace-crate "idle"
     stack-size 32
     priority 4
+
+    // This makes Humility work a _lot_ better.
+    features "insomniac"
 }
