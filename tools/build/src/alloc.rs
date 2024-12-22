@@ -91,7 +91,7 @@ pub fn allocate_space(
             let granule = target_spec.alloc_minimum.next_power_of_two();
             let round = granule - 1;
             available.values_mut().for_each(|range| {
-                range.start = (range.start + round) / granule;
+                range.start = (range.start.next_multiple_of(granule) + round) / granule;
                 range.end = (range.end + round) / granule;
             });
             let tasks_granule = tasks.iter().map(|(name, info)| {
@@ -120,8 +120,33 @@ pub fn allocate_space(
                 (name, range.start * granule .. range.end * granule)
             }).collect();
         }
-        SizeRule::MultipleOf(_granule) => {
-            todo!()
+        SizeRule::MultipleOf(granule) => {
+            let round = granule - 1;
+            available.values_mut().for_each(|range| {
+                range.start = (range.start + round) / granule;
+                range.end = (range.end + round) / granule;
+            });
+            for (name, info) in tasks {
+                let ta = results.tasks.entry(name.0.clone()).or_default();
+                for (mem, orig_byte_size) in &info.reqs {
+                    let granule_size = (orig_byte_size + round) / granule;
+                    let byte_size = granule_size * granule;
+
+                    let av = available.get_mut(mem).unwrap();
+                    let base = av.start * granule;
+                    av.start += granule_size;
+
+                    ta.insert(mem.0.clone(), TaskAllocation {
+                        requested: *orig_byte_size,
+                        base,
+                        sizes: vec![byte_size],
+                    });
+                }
+            }
+
+            results.kernel.by_region = available.into_iter().map(|(n, range)| {
+                (n, range.start * granule .. range.end * granule)
+            }).collect();
         }
     }
 

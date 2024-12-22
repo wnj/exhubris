@@ -1,0 +1,52 @@
+chip "STM32U575ZI-NS"
+target-triple "thumbv8m.main-none-eabihf"
+probe-rs-name "STM32U575ZITx"
+
+// L412 lacks I2C4 and thus has a slightly smaller vector table than some other
+// entries in the series.
+vector-table-size 0x274
+
+memory {
+    region "vectors" {
+        base 0x0800_0000
+        size 0x2CC // enlarged to accommodate header
+        read
+    }
+    region "flash" {
+        base 0x0800_02CC
+        size 0x1FFD34 // 2048 kiB - 0x2CC
+        read
+        execute
+    }
+    region "ram" {
+        base 0x2000_0000
+        size 0xC_0000 // 768 kiB
+        read
+        write
+    }
+}
+
+peripheral "tim2" {
+    base 0x4000_0000
+    size 0x400
+}
+
+peripheral "crs" {
+    base 0x4000_6000
+    size 0x400
+}
+
+peripheral "pwr" {
+    base 0x4602_0800
+    size 0x400
+}
+
+peripheral "rcc" {
+    base 0x4602_0C00
+    size 0x400
+}
+
+peripheral "gpios" {
+    base 0x4202_0000
+    size 0x2800
+}

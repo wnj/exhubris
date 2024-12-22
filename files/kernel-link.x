@@ -106,6 +106,7 @@ SECTIONS
   } > FLASH
 
   .stack (NOLOAD) : ALIGN(8) {
+    _stack_base = .;
     . = ORIGIN(STACK) + LENGTH(STACK);
     _stack_start = .;
   } >STACK

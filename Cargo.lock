@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -107,7 +107,7 @@ dependencies = [
 [[package]]
 name = "armv8-m-mpu"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "cortex-m",
 ]
@@ -221,7 +221,7 @@ dependencies = [
 [[package]]
 name = "build-kconfig"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "bitflags",
  "serde",
@@ -230,7 +230,7 @@ dependencies = [
 [[package]]
 name = "build-util"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "anyhow",
  "indexmap 1.9.3",
@@ -277,7 +277,7 @@ dependencies = [
 [[package]]
 name = "call_rustfmt"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "anyhow",
 ]
@@ -1065,7 +1065,7 @@ dependencies = [
 [[package]]
 name = "kern"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "abi",
  "anyhow",
@@ -1094,7 +1094,7 @@ dependencies = [
 [[package]]
 name = "kerncore"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 
 [[package]]
 name = "kernel-generic-stm32g031"
@@ -1115,6 +1115,17 @@ dependencies = [
  "cortex-m-rt",
  "kern",
  "stm32l4",
+]
+
+[[package]]
+name = "kernel-generic-stm32u575"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "cortex-m",
+ "cortex-m-rt",
+ "kern",
+ "stm32-metapac",
 ]
 
 [[package]]
@@ -1388,12 +1399,12 @@ dependencies = [
 [[package]]
 name = "phash"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 
 [[package]]
 name = "phash-gen"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "anyhow",
  "phash",
@@ -2021,7 +2032,7 @@ dependencies = [
 [[package]]
 name = "toml-task"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 dependencies = [
  "anyhow",
  "indexmap 1.9.3",
@@ -2126,7 +2137,7 @@ checksum = "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd"
 [[package]]
 name = "unwrap-lite"
 version = "0.1.0"
-source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#7c7390af466ebfec5c033fdc7123907c9ff1b86d"
+source = "git+https://github.com/cbiffle/hubris-fork.git?branch=cbiffle/exhubris-fixes#dbdad54b91d2b1bdf64c7ae96169dca2fcaa9056"
 
 [[package]]
 name = "userlib"
