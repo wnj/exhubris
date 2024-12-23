@@ -435,6 +435,7 @@ pub fn idle() {
 
 cfg_if::cfg_if! {
     if #[cfg(any(
+        hubris_target = "thumbv8m.main-none-eabihf",
         hubris_target = "thumbv7em-none-eabihf",
         hubris_target = "thumbv6m-none-eabi",
     ))] {

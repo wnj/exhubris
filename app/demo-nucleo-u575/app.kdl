@@ -1,0 +1,40 @@
+// Demo Application Definition - NUCLEO-U575 edition
+
+// App name is used for output files etc. It must be the first non-blank
+// non-comment line in the file.
+app "demo-nucleo-u575"
+
+// Currently the board information is inlined. It would be nice to refer to an
+// external file, like we already do for chip definitions.
+board "nucleo-u575zi" {
+    chip "stm32u575zi_ns"
+}
+
+// Instructions for building the kernel.
+kernel {
+    workspace-crate "kernel-generic-stm32u575"
+    stack-size 640
+    features "clock-160mhz-hsi16"
+}
+
+task "super" {
+    workspace-crate "minisuper"
+    stack-size 256
+    priority 0
+}
+
+/-task "sys" {
+    workspace-crate "drv-stm32u5-sys"
+    stack-size 256
+    priority 1
+    features "chip-stm32u575zi"
+    uses-peripheral "rcc"
+    uses-peripheral "gpios"
+}
+
+// Idle task. This must be the lowest priority task.
+task "idle" {
+    workspace-crate "idle"
+    stack-size 128
+    priority 4
+}

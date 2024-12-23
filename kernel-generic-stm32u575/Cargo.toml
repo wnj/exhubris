@@ -1,0 +1,23 @@
+[package]
+name = "kernel-generic-stm32u575"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+clock-160mhz-hsi16 = []
+
+# Rather specialized kernel profiling via fixed GPIOs.
+# Probably of limited usefulness in general.
+kernel-profiling = []
+
+[dependencies]
+cfg-if = "1.0.0"
+cortex-m = { version = "0.7.7", features = ["inline-asm"] }
+cortex-m-rt = "0.7.5"
+stm32-metapac = { version = "15.0.0", features = ["rt", "stm32u575zi"] }
+
+[dependencies.hubris-kern]
+package = "kern"
+git = "https://github.com/cbiffle/hubris-fork.git"
+branch = "cbiffle/exhubris-fixes"
+features = ["stack-watermark"]

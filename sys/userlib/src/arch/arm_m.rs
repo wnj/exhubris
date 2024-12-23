@@ -745,7 +745,14 @@ pub fn sys_panic(msg: &[u8]) -> ! {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(hubris_target = "thumbv7em-none-eabihf")] {
+    if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
         global_asm!("
         .section .text.sys_panic_stub
         .globl sys_panic_stub
@@ -1757,7 +1764,14 @@ cfg_if::cfg_if! {
             ",
             main = sym main,
         );
-    } else if #[cfg(hubris_target = "thumbv7em-none-eabihf")] {
+    } else if #[cfg(any(
+        // It'd sure be nice if we could detect proper thumb2
+        hubris_target = "thumbv7m-none-eabi",
+        hubris_target = "thumbv7em-none-eabi",
+        hubris_target = "thumbv7em-none-eabihf",
+        hubris_target = "thumbv8m.main-none-eabi",
+        hubris_target = "thumbv8m.main-none-eabihf",
+    ))] {
         global_asm!("
         .section .text.start
         .globl _start
