@@ -1189,7 +1189,7 @@ pub struct BuildPlan {
     /// crate's build scripts.
     pub smuggled_env: BTreeMap<String, String>,
     /// Any extra rustflags.
-    pub rustflags: String,
+    pub rustflags: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1242,9 +1242,20 @@ pub fn plan_build(
         );
     }
 
+    let mut rustflags = vec![
+        "--check-cfg=cfg(hubris_chip, values(any()))".to_string(),
+    ];
+
+    for compat_name in &app.board.chip.compatible {
+        rustflags.push(
+            format!("--cfg=hubris_chip=\"{}\"", compat_name.value()),
+        );
+    }
+
     // Attempt to locate the cargo package for each task.
     let mut task_plans = IndexMap::new();
     for (name, task) in &app.tasks {
+        let rustflags = rustflags.clone();
         let target_triple = task.target.as_ref()
             .unwrap_or(&app.board.chip.target_triple);
 
@@ -1318,7 +1329,7 @@ pub fn plan_build(
                     cargo_features,
                     default_features: task.default_features,
                     smuggled_env,
-                    rustflags: Default::default(), // TODO
+                    rustflags,
                 }
             }
             PackageSource::GitCrate { repo, name, rev } => {
@@ -1336,7 +1347,7 @@ pub fn plan_build(
                     cargo_features: task.cargo_features.keys().cloned().collect(),
                     default_features: task.default_features,
                     smuggled_env,
-                    rustflags: Default::default(),
+                    rustflags,
                 }
             }
         };
@@ -1378,7 +1389,7 @@ pub fn plan_build(
                     cargo_features: app.kernel.cargo_features.keys().cloned().collect(),
                     default_features: app.kernel.default_features,
                     smuggled_env: Default::default(), // TODO
-                    rustflags: Default::default(), // TODO
+                    rustflags,
                 }
             }
             PackageSource::GitCrate { repo, name, rev } => {
@@ -1394,7 +1405,7 @@ pub fn plan_build(
                     cargo_features: app.kernel.cargo_features.keys().cloned().collect(),
                     default_features: app.kernel.default_features,
                     smuggled_env: Default::default(), // TODO
-                    rustflags: Default::default(), // TODO
+                    rustflags,
                 }
             }
         }

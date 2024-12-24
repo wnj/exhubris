@@ -666,9 +666,8 @@ fn do_cargo_build(
     if let Some(tc) = &plan.toolchain_override {
         rows.push(("Toolchain Override", tc));
     }
-    if !plan.rustflags.is_empty() {
-        rows.push(("RUSTFLAGS", &plan.rustflags));
-    }
+    let joined_rustflags = plan.rustflags.join("\n");
+    rows.push(("RUSTFLAGS", &joined_rustflags));
     for (k, v) in &plan.smuggled_env {
         rows.push((k, v));
     }
@@ -683,20 +682,17 @@ fn do_cargo_build(
     let linker_script_copy = tmpdir.join("link.x");
     std::fs::write(&linker_script_copy, linker_script_text).into_diagnostic()?;
 
-    let mut rustflags = format!("-C link-arg=-L{} -C link-arg=-T{}{}",
-            tmpdir.display(),
-            linker_script_copy.display(),
-            match link_style {
-                LinkStyle::Partial => " -C link-arg=-r",
-                LinkStyle::Full => "",
-            },
-    );
-    if !plan.rustflags.is_empty() {
-        rustflags.push(' ');
-        rustflags.push_str(&plan.rustflags);
+    let mut rustflags = vec![
+        format!("-Clink-arg=-L{}", tmpdir.display()),
+        format!("-Clink-arg=-T{}", linker_script_copy.display()),
+    ];
+    match link_style {
+        LinkStyle::Partial => rustflags.push("-Clink-arg=-r".to_string()),
+        LinkStyle::Full => (),
     }
+    rustflags.extend(plan.rustflags.iter().cloned());
 
-    cmd.env("RUSTFLAGS", rustflags);
+    cmd.env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\u{001f}"));
 
     let product_path = match &plan.method {
         BuildMethod::CargoWorkspaceBuild => {
