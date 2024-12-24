@@ -145,21 +145,21 @@ use idyll_runtime::{Leased, Read, Meta};
 use num_traits::FromPrimitive as _;
 use protocol::{Dir, Recipient, RequestTypeType, StdRequestCode};
 use userlib::{ReplyFaultReason, TaskId};
-use drv_stm32l4_sys_api::{Stm32L4Sys, Port, Function};
+use drv_stm32xx_sys_api::{Stm32Sys, Port, Function};
 use stm32_metapac::usb::vals::{EpType, Stat};
 
 #[export_name = "main"]
 fn main() -> ! {
     // Make an IPC client for the SYS task.
-    let sys = Stm32L4Sys::from(hubris_task_slots::SLOTS.sys);
+    let sys = Stm32Sys::from(hubris_task_slots::SLOTS.sys);
 
     // STM32L4 USB device setup:
 
     // Turn on clock to USBFS.
-    sys.enable_clock(drv_stm32l4_sys_api::PeripheralName::UsbFs);
+    sys.enable_clock(drv_stm32xx_sys_api::PeripheralName::UsbFs);
     // Also turn on the Clock Recovery System that we use to trim the 48MHz
     // oscillator.
-    sys.enable_clock(drv_stm32l4_sys_api::PeripheralName::Crs);
+    sys.enable_clock(drv_stm32xx_sys_api::PeripheralName::Crs);
 
     // Expose USB pins.
     for pin in [11, 12] {

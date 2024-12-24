@@ -6,7 +6,7 @@
 
 use userlib as _;
 use hubris_task_slots::SLOTS;
-use drv_stm32l4_sys_api::Stm32L4Sys as Sys;
+use drv_stm32xx_sys_api::Stm32Sys as Sys;
 
 #[export_name = "main"]
 fn main() -> ! {

@@ -19,7 +19,7 @@ fn main() {
     let mut f = std::fs::File::create(outpath.join("config.rs")).unwrap();
     writeln!(f, "pub(crate) mod config {{").unwrap();
 
-    writeln!(f, "use drv_stm32l4_sys_api::Port;").unwrap();
+    writeln!(f, "use drv_stm32xx_sys_api::Port;").unwrap();
 
     for (array, src) in [("ROWS", &config.rows), ("COLS", &config.cols)] {
         let n = src.len();

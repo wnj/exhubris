@@ -12,7 +12,7 @@ userlib = { workspace = true, features = ["no-panic"] }
 stm32-metapac = "15.0.0"
 hubpack = "0.1.2"
 serde = { version = "1.0.215", default-features = false, features = ["derive"] }
-drv-stm32l4-sys-api = { version = "0.1.0", path = "../stm32l4-sys-api" }
+drv-stm32xx-sys-api = { version = "0.1.0", path = "../stm32xx-sys-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 hubris-notifications = { version = "0.1.0", path = "../../sys/notifications" }
 cortex-m = { version = "0.7.7", features = ["inline-asm"] }

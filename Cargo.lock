@@ -587,55 +587,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "drv-stm32g0-sys"
-version = "0.1.0"
-dependencies = [
- "hubpack",
- "hubris-build",
- "idyll_runtime",
- "serde",
- "stm32-metapac",
- "userlib",
-]
-
-[[package]]
-name = "drv-stm32g0-sys-api"
-version = "0.1.0"
-dependencies = [
- "hubpack",
- "hubris-build",
- "serde",
- "userlib",
-]
-
-[[package]]
-name = "drv-stm32l4-sys"
-version = "0.1.0"
-dependencies = [
- "hubpack",
- "hubris-build",
- "idyll_runtime",
- "serde",
- "stm32-metapac",
- "userlib",
-]
-
-[[package]]
-name = "drv-stm32l4-sys-api"
-version = "0.1.0"
-dependencies = [
- "hubpack",
- "hubris-build",
- "serde",
- "userlib",
-]
-
-[[package]]
 name = "drv-stm32l4-usb"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
- "drv-stm32l4-sys-api",
+ "drv-stm32xx-sys-api",
  "hubpack",
  "hubris-build",
  "hubris-build-util",
@@ -1049,8 +1005,8 @@ dependencies = [
 name = "kbd-basic-scanner"
 version = "0.1.0"
 dependencies = [
- "drv-stm32l4-sys-api",
  "drv-stm32l4-usb-api",
+ "drv-stm32xx-sys-api",
  "heapless",
  "hubpack",
  "hubris-build",
@@ -1164,7 +1120,7 @@ dependencies = [
 name = "l4blinky"
 version = "0.1.0"
 dependencies = [
- "drv-stm32l4-sys-api",
+ "drv-stm32xx-sys-api",
  "hubris-notifications",
  "hubris-task-slots",
  "serde_json",
@@ -1439,7 +1395,7 @@ dependencies = [
 name = "ping"
 version = "0.1.0"
 dependencies = [
- "drv-stm32g0-sys-api",
+ "drv-stm32xx-sys-api",
  "hubris-task-slots",
  "userlib",
 ]
@@ -2118,7 +2074,7 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 name = "uart-echo"
 version = "0.1.0"
 dependencies = [
- "drv-stm32g0-sys-api",
+ "drv-stm32xx-sys-api",
  "hubris-build-util",
  "hubris-notifications",
  "hubris-task-slots",

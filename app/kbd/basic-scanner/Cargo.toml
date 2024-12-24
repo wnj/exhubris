@@ -7,7 +7,7 @@ edition = "2021"
 chip-stm32l412kb = ["stm32-metapac/stm32l412kb"]
 
 [dependencies]
-drv-stm32l4-sys-api = { version = "0.1.0", path = "../../../drv/stm32l4-sys-api" }
+drv-stm32xx-sys-api = { version = "0.1.0", path = "../../../drv/stm32xx-sys-api" }
 drv-stm32l4-usb-api = { version = "0.1.0", path = "../../../drv/stm32l4-usb-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../../sys/task-slots" }
 hubris-notifications = { path = "../../../sys/notifications" }

@@ -24,7 +24,7 @@ task "super" {
 }
 
 task "sys" {
-    workspace-crate "drv-stm32g0-sys"
+    workspace-crate "drv-stm32xx-sys"
     stack-size 256
     priority 1
     uses-peripheral "rcc"

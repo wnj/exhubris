@@ -16,7 +16,7 @@ fn main() {
     let mut f = std::fs::File::create(&out).unwrap();
 
     writeln!(f, "pub(crate) mod config {{").unwrap();
-    writeln!(f, "use drv_stm32l4_sys_api::Port;").unwrap();
+    writeln!(f, "use drv_stm32xx_sys_api::Port;").unwrap();
 
     let pins = config["pins"].as_array().unwrap();
     let npins = pins.len();

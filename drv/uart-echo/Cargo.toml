@@ -9,7 +9,7 @@ edition = "2021"
 chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
 
 [dependencies]
-drv-stm32g0-sys-api = { version = "0.1.0", path = "../stm32g0-sys-api" }
+drv-stm32xx-sys-api = { version = "0.1.0", path = "../stm32xx-sys-api" }
 hubris-notifications = { version = "0.1.0", path = "../../sys/notifications" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 stm32-metapac = { version = "15.0.0" }

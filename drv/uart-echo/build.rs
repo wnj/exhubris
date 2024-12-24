@@ -12,7 +12,7 @@ fn main() {
     let mut f = std::fs::File::create(&out).unwrap();
 
     writeln!(f, "pub(crate) mod config {{").unwrap();
-    writeln!(f, "use drv_stm32g0_sys_api::{{Port, Function}};").unwrap();
+    writeln!(f, "use drv_stm32xx_sys_api::{{Port, Function}};").unwrap();
 
     writeln!(f, "pub const UART_CLOCK_HZ: u32 = {};", config["uart-clock-hz"]).unwrap();
     writeln!(f, "pub const BAUD_RATE: u32 = {};", config["baud-rate"]).unwrap();

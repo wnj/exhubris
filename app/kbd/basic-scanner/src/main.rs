@@ -38,7 +38,7 @@
 use core::{mem::MaybeUninit, num::NonZeroU8, ptr::addr_of_mut, sync::atomic::{AtomicBool, Ordering}};
 
 use hubris_task_slots::SLOTS;
-use drv_stm32l4_sys_api::{Stm32L4Sys as Sys, Port, Pull, PeripheralName};
+use drv_stm32xx_sys_api::{Stm32Sys as Sys, Port, Pull, PeripheralName};
 use drv_stm32l4_usb_api::{UsbHid, UsbEvent};
 use idyll_runtime::{NotificationHandler, Meta};
 use userlib::{sys_enable_irq_and_clear_pending, ReplyFaultReason};
@@ -337,6 +337,8 @@ fn get_port(port: Port) -> stm32_metapac::gpio::Gpio {
         Port::C => stm32_metapac::GPIOC,
         Port::D => stm32_metapac::GPIOD,
         Port::H => stm32_metapac::GPIOH,
+
+        _ => unreachable!(),
     }
 }
 
