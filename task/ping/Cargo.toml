@@ -7,3 +7,7 @@ edition = "2021"
 drv-stm32xx-sys-api = { version = "0.1.0", path = "../../drv/stm32xx-sys-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 userlib = {workspace = true, features = ["no-panic"]}
+
+[build-dependencies]
+hubris-build-util = { version = "0.1.0", path = "../../sys/build-util" }
+serde_json = "1.0.134"

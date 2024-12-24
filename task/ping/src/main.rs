@@ -13,7 +13,7 @@ use drv_stm32xx_sys_api::{Stm32Sys as Sys, Port};
 #[export_name = "main"]
 fn main() -> ! {
     let sys = Sys::from(SLOTS.sys);
-    sys.set_pin_output(Port::C, 6);
+    sys.set_pin_output(config::PIN.0, config::PIN.1);
 
     let mut pong = SLOTS.pong;
 
@@ -70,7 +70,9 @@ fn main() -> ! {
 
         if send_count == 100 {
             send_count = 0;
-            sys.toggle_pin(Port::C, 6);
+            sys.toggle_pin(config::PIN.0, config::PIN.1);
         }
     }
 }
+
+include!(concat!(env!("OUT_DIR"), "/task_config.rs"));

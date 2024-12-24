@@ -63,6 +63,9 @@ task "ping" {
     priority 3
     uses-task "pong"
     uses-task "sys"
+    config {
+        led-pin "C6"
+    }
 }
 
 // Idle task. This must be the lowest priority task.

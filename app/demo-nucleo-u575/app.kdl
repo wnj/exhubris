@@ -19,16 +19,35 @@ kernel {
 
 task "super" {
     workspace-crate "minisuper"
-    stack-size 256
+    stack-size 192
     priority 0
 }
 
 task "sys" {
     workspace-crate "drv-stm32xx-sys"
-    stack-size 256
+    stack-size 192
     priority 1
     uses-peripheral "rcc"
     uses-peripheral "gpios"
+}
+
+// IPC server.
+task "pong" {
+    workspace-crate "pong"
+    stack-size 256
+    priority 2
+}
+
+// IPC generator.
+task "ping" {
+    workspace-crate "ping"
+    stack-size 256
+    priority 3
+    uses-task "pong"
+    uses-task "sys"
+    config {
+        led-pin "C7"
+    }
 }
 
 // Idle task. This must be the lowest priority task.
