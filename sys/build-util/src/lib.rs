@@ -46,3 +46,15 @@ pub fn get_task_config<T>() -> T
     println!("cargo::rerun-if-env-changed=HUBRIS_TASK_CONFIG");
     serde_json::from_str(&text).expect("config failed to deserialize (is probably wrong)")
 }
+
+/// Collects the chip configuration information from the build environment and
+/// exposes it as a set of `hubris_chip` cfgs.
+pub fn export_chip_cfg() {
+    println!("cargo::rerun-if-env-changed=HUBRIS_CHIP_COMPAT");
+    println!("cargo::rustc-check-cfg=cfg(hubris_chip, values(any()))");
+    if let Ok(text) = std::env::var("HUBRIS_CHIP_COMPAT") {
+        for compat_name in text.split(',') {
+            println!("cargo::rustc-cfg=hubris_chip=\"{compat_name}\"");
+        }
+    }
+}

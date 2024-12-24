@@ -27,7 +27,6 @@ task "super" {
     workspace-crate "drv-stm32u5-sys"
     stack-size 256
     priority 1
-    features "chip-stm32u575zi"
     uses-peripheral "rcc"
     uses-peripheral "gpios"
 }

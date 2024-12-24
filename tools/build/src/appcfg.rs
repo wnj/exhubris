@@ -4,7 +4,7 @@ use cargo_metadata::Package;
 use indexmap::{IndexMap, IndexSet};
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use miette::{bail, diagnostic, miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource, SourceSpan};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{config, BuildEnv};
 
@@ -64,6 +64,9 @@ pub struct ChipDef {
 
     /// Name of the chip for probe-rs purposes.
     pub probe_rs_name: Option<Spanned<String>>,
+
+    /// "Compatibility names" for this chip, for matching in cfgs.
+    pub compatible: Vec<Spanned<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -419,6 +422,7 @@ pub fn parse_chip(
             .collect::<miette::Result<BTreeMap<_, _>>>()?;
 
         let probe_rs_name = get_unique_optional_string_value(doc, "probe-rs-name")?;
+        let compatible = get_unique_optional_string_array(doc, "compatible")?;
 
         Ok(ChipDef {
             source: source.clone(),
@@ -428,6 +432,7 @@ pub fn parse_chip(
             memory,
             peripherals,
             probe_rs_name,
+            compatible,
         })
     })
 }
@@ -1258,6 +1263,9 @@ pub fn plan_build(
             smuggled_env.insert("HUBRIS_TASK_CONFIG".to_string(), ronconfig);
         }
 
+        let chip_compat = itertools::join(app.board.chip.compatible.iter().map(|spanned| spanned.value()), ",");
+        smuggled_env.insert("HUBRIS_CHIP_COMPAT".to_string(), chip_compat);
+
         let plan = match task.package_source.value() {
             PackageSource::WorkspaceCrate { name } => {
                 let package = binmap.get(&(name, name))
@@ -1281,13 +1289,33 @@ pub fn plan_build(
                     ).with_source_code(app.source.clone()));
                 }
 
+                // Process auto-features.
+                let mut cargo_features: BTreeSet<String> = task.cargo_features.keys().cloned().collect();
+                let hmeta: PackageMetaOverlay = if package.metadata.is_null() {
+                    PackageMetaOverlay::default()
+                } else {
+                    serde_json::from_value(package.metadata.clone()).into_diagnostic()?
+                };
+
+                if hmeta.hubris.auto_features.chip {
+                    // Process compat names _in order_ to try and find the
+                    // longest match.
+                    for compat_name in &app.board.chip.compatible {
+                        let feat_name = format!("chip-{}", compat_name.value().to_lowercase());
+                        if package.features.contains_key(&feat_name) {
+                            cargo_features.insert(feat_name);
+                            break;
+                        }
+                    }
+                }
+
                 BuildPlan {
                     method: BuildMethod::CargoWorkspaceBuild,
                     package_name: package.name.clone(),
                     bin_name: package.name.clone(),
                     target_triple: target_triple.value().clone(),
                     toolchain_override: task.toolchain.as_ref().map(|s| s.value().clone()),
-                    cargo_features: task.cargo_features.keys().cloned().collect(),
+                    cargo_features,
                     default_features: task.default_features,
                     smuggled_env,
                     rustflags: Default::default(), // TODO
@@ -1377,6 +1405,27 @@ pub fn plan_build(
         kernel,
     })
 }
+
+#[derive(Deserialize, Default)]
+struct PackageMetaOverlay {
+    #[serde(default)]
+    hubris: HubrisPackageMeta,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+struct HubrisPackageMeta {
+    #[serde(default)]
+    auto_features: AutoFeaturesPackageMeta,
+}
+
+#[derive(Deserialize, Default)]
+struct AutoFeaturesPackageMeta {
+    #[serde(default)]
+    chip: bool,
+}
+
+
 
 #[cfg(test)]
 mod tests {

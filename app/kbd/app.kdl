@@ -32,7 +32,6 @@ task "sys" {
     workspace-crate "drv-stm32l4-sys"
     stack-size 224
     priority 1
-    features "chip-stm32l412kb"
     uses-peripheral "rcc"
     uses-peripheral "gpios"
 }
@@ -41,7 +40,6 @@ task "usbhid" {
     workspace-crate "drv-stm32l4-usb"
     stack-size 328
     priority 2
-    features "chip-stm32l412kb"
     uses-task "sys"
     uses-peripheral "crs"
     uses-peripheral "usbfs_and_sram" {
@@ -71,9 +69,6 @@ task "scanner" {
     uses-peripheral "tim2" {
         irq "irq" "tim-irq"
     }
-
-    // However, direct access to peripherals means it now needs a chip feature.
-    features "chip-stm32l412kb"
 
     notification "usb_event_ready"
     notification "usb_report_needed"

@@ -3,6 +3,14 @@ target-triple "thumbv6m-none-eabi"
 vector-table-size 0xC0
 probe-rs-name "STM32G031K8Tx"
 
+compatible {
+    - "STM32G031K8" // flash size + pin count
+    - "STM32G031x8" // flash size only
+    - "STM32G031" // subfamily only
+    - "STM32G0" // family only
+    - "arm-cortex-m0plus" // microprocessor generic name
+}
+
 memory {
     region "vectors" {
         base 0x0800_0000

@@ -20,3 +20,6 @@ bench = false
 
 [build-dependencies]
 hubris-build.workspace = true
+
+[package.metadata.hubris.auto-features]
+chip = true

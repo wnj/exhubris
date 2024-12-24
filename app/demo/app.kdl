@@ -27,7 +27,6 @@ task "sys" {
     workspace-crate "drv-stm32g0-sys"
     stack-size 256
     priority 1
-    features "chip-stm32g031k8"
     uses-peripheral "rcc"
     uses-peripheral "gpios"
 }
@@ -36,7 +35,6 @@ task "echo" {
     workspace-crate "uart-echo"
     stack-size 256
     priority 2
-    features "chip-stm32g031k8"
     uses-task "sys"
     uses-peripheral "usart2" {
         irq "irq" "usart-irq"

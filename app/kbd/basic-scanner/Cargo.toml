@@ -22,3 +22,6 @@ stm32-metapac = "15.0.0"
 hubris-build.workspace = true
 hubris-build-util = { version = "0.1.0", path = "../../../sys/build-util" }
 serde = { version = "1.0.215", features = ["derive"] }
+
+[package.metadata.hubris.auto-features]
+chip = true

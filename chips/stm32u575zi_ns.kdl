@@ -2,6 +2,14 @@ chip "STM32U575ZI-NS"
 target-triple "thumbv8m.main-none-eabihf"
 probe-rs-name "STM32U575ZITx"
 
+compatible {
+    - "STM32U575ZI"
+    - "STM32U575xI"
+    - "STM32U575"
+    - "STM32U5"
+    - "arm-cortex-m33"
+}
+
 // L412 lacks I2C4 and thus has a slightly smaller vector table than some other
 // entries in the series.
 vector-table-size 0x274

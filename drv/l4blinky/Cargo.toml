@@ -17,3 +17,6 @@ userlib = { workspace = true, features = ["no-panic"] }
 
 [build-dependencies]
 serde_json = "1.0.133"
+
+[package.metadata.hubris.auto-features]
+chip = true

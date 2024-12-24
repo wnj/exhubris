@@ -2,6 +2,15 @@ chip "STM32L412KB"
 target-triple "thumbv7em-none-eabihf"
 probe-rs-name "STM32L412KBTx"
 
+compatible {
+    - "STM32L412KB"
+    - "STM32L412xB"
+    - "STM32L412"
+    - "STM32L4"
+    - "arm-cortex-m4f"
+    - "arm-cortex-m4"
+}
+
 // L412 lacks I2C4 and thus has a slightly smaller vector table than some other
 // entries in the series.
 vector-table-size 0x18C
