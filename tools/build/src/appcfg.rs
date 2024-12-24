@@ -1380,6 +1380,26 @@ pub fn plan_build(
                     ).with_source_code(app.source.clone()));
                 }
 
+                // Process auto-features.
+                let mut cargo_features: BTreeSet<String> = app.kernel.cargo_features.keys().cloned().collect();
+                let hmeta: PackageMetaOverlay = if package.metadata.is_null() {
+                    PackageMetaOverlay::default()
+                } else {
+                    serde_json::from_value(package.metadata.clone()).into_diagnostic()?
+                };
+
+                if hmeta.hubris.auto_features.chip {
+                    // Process compat names _in order_ to try and find the
+                    // longest match.
+                    for compat_name in &app.board.chip.compatible {
+                        let feat_name = format!("chip-{}", compat_name.value().to_lowercase());
+                        if package.features.contains_key(&feat_name) {
+                            cargo_features.insert(feat_name);
+                            break;
+                        }
+                    }
+                }
+
                 BuildPlan {
                     method: BuildMethod::CargoWorkspaceBuild,
                     package_name: package.name.clone(),
