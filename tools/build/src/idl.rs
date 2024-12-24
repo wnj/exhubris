@@ -8,8 +8,40 @@ use miette::{bail, miette, LabeledSpan, NamedSource, IntoDiagnostic as _, Contex
 
 use crate::appcfg::{add_source, get_children_named, get_unique_bool, get_unique_i64_value, get_unique_optional_string_value, get_unique_string_value, get_uniquely_named_children, no_children, required_children, Spanned};
 
+pub trait EvalCtx {
+    fn is_condition_met(&self, cfg: &str, value: &str) -> bool;
+}
+
+impl EvalCtx for BTreeMap<String, BTreeSet<String>> {
+    fn is_condition_met(&self, cfg: &str, value: &str) -> bool {
+        if let Some(set) = self.get(cfg) {
+            if set.contains(value) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 pub fn load_interface(
     path: impl AsRef<Path>,
+) -> miette::Result<InterfaceDef> {
+    // Build the CFG dictionary
+    let mut dict: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (name, value) in std::env::vars() {
+        if let Some(rest) = name.strip_prefix("CARGO_CFG_") {
+            for sub in value.split(',') {
+                dict.entry(rest.to_lowercase()).or_default()
+                    .insert(sub.to_string());
+            }
+        }
+    }
+    load_interface_ctx(path, &dict)
+}
+
+pub fn load_interface_ctx(
+    path: impl AsRef<Path>,
+    ctx: &impl EvalCtx,
 ) -> miette::Result<InterfaceDef> {
     let path = path.as_ref();
     let doc_src = std::fs::read_to_string(path)
@@ -22,18 +54,20 @@ pub fn load_interface(
     let doc: kdl::KdlDocument = crate::appcfg::add_source(&source, || {
         Ok(doc_src.parse()?)
     })?;
-    parse_interface(&source, &doc)
+    parse_interface(&source, &doc, ctx)
 }
 
 pub fn parse_interface(
     source: &Arc<NamedSource>,
     doc: &KdlDocument,
+    ctx: &impl EvalCtx,
 ) -> miette::Result<InterfaceDef> {
-    add_source(source, || parse_interface_internal(doc))
+    add_source(source, || parse_interface_internal(doc, ctx))
 }
 
 fn parse_interface_internal(
     doc: &KdlDocument,
+    ctx: &impl EvalCtx,
 ) -> miette::Result<InterfaceDef> {
     let first = doc.nodes().first().ok_or_else(|| {
         miette!("alleged interface doesn't contain any nodes")
@@ -51,20 +85,7 @@ fn parse_interface_internal(
         types: Default::default(),
     };
 
-    for (name, node) in get_uniquely_named_children(doc, "enum")? {
-        let e = parse_enum(required_children(node)?)?;
-        def.types.insert(name, TypeDef::Enum(e));
-    }
-
-    for (name, node) in get_uniquely_named_children(doc, "struct")? {
-        let e = parse_struct(required_children(node)?)?;
-        def.types.insert(name, TypeDef::Struct(e));
-    }
-
-    for (name, node) in get_uniquely_named_children(doc, "method")? {
-        let m = parse_method(required_children(node)?)?;
-        def.methods.insert(name, m);
-    }
+    parse_interface_body(doc, ctx, &mut def)?;
 
     let mut used_operation_numbers = BTreeMap::new();
     for method in def.methods.values() {
@@ -84,6 +105,100 @@ fn parse_interface_internal(
     }
 
     Ok(def)
+}
+
+fn parse_interface_body(
+    doc: &KdlDocument,
+    ctx: &impl EvalCtx,
+    def: &mut InterfaceDef,
+) -> miette::Result<()> {
+    for (name, node) in get_uniquely_named_children(doc, "enum")? {
+        let e = parse_enum(required_children(node)?)?;
+        def.types.insert(name, TypeDef::Enum(e));
+    }
+
+    for (name, node) in get_uniquely_named_children(doc, "struct")? {
+        let e = parse_struct(required_children(node)?)?;
+        def.types.insert(name, TypeDef::Struct(e));
+    }
+
+    for (name, node) in get_uniquely_named_children(doc, "method")? {
+        let m = parse_method(required_children(node)?)?;
+        def.methods.insert(name, m);
+    }
+
+    for on_node in get_children_named(doc, "on-cfg")? {
+        let cfg = on_node.entries().first().ok_or_else(|| {
+            miette!(
+                labels = [LabeledSpan::at(*on_node.name().span(), "on-cfg node missing string argument")],
+                "on-cfg requires a string argument (the cfg name)"
+            )
+        })?;
+        let cfg = cfg.value().as_string().ok_or_else(|| {
+            miette!(
+                labels = [LabeledSpan::at(*cfg.span(), "not a string")],
+                "on-cfg requires a string argument (the cfg name)"
+            )
+        })?;
+        let children = required_children(on_node)?;
+        let mut else_span = None;
+        let mut just_checking = false;
+        for child in children.nodes() {
+            match child.name().value() {
+                "is" => {
+                    if let Some(es) = else_span {
+                        bail!(
+                            labels = [
+                                LabeledSpan::at(es, "'else' previously found here"),
+                                LabeledSpan::at(*child.name().span(), "'is' node found here"),
+                            ],
+                            "'is' cannot follow 'else'"
+                        );
+                    }
+                    let value = child.entries().first().ok_or_else(|| {
+                        miette!(
+                            labels = [LabeledSpan::at(*child.name().span(), "'is' node missing string argument")],
+                            "'is' requires a string argument (the value to match)"
+                        )
+                    })?;
+                    let value = value.value().as_string().ok_or_else(|| {
+                        miette!(
+                            labels = [LabeledSpan::at(*value.span(), "not a string")],
+                            "'is' requires a string argument (the value to match)"
+                        )
+                    })?;
+                    if !just_checking && ctx.is_condition_met(cfg, value) {
+                        parse_interface_body(required_children(child)?, ctx, def)?;
+                        just_checking = true;
+                    }
+                }
+                "else" => {
+                    if let Some(es) = else_span {
+                        bail!(
+                            labels = [
+                                LabeledSpan::at(es, "'else' previously found here"),
+                                LabeledSpan::at(*child.name().span(), "...but also found here??"),
+                            ],
+                            "duplicate 'else' in 'on-cfg'"
+                        );
+                    }
+                    else_span = Some(*child.span());
+                    if !just_checking {
+                        parse_interface_body(required_children(child)?, ctx, def)?;
+                        just_checking = true;
+                    }
+                }
+                other => {
+                    bail!(
+                        labels = [LabeledSpan::at(*child.name().span(), "not implemented")],
+                        "on-cfg block contained unexpected operator \"{other}\""
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_enum(

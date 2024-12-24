@@ -666,6 +666,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "drv-stm32xx-sys"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "hubpack",
+ "hubris-build",
+ "idyll_runtime",
+ "serde",
+ "stm32-metapac",
+ "userlib",
+]
+
+[[package]]
+name = "drv-stm32xx-sys-api"
+version = "0.1.0"
+dependencies = [
+ "hubpack",
+ "hubris-build",
+ "serde",
+ "userlib",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,27 @@
+[package]
+name = "drv-stm32xx-sys"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
+chip-stm32l412kb = ["stm32-metapac/stm32l412kb"]
+
+[dependencies]
+cfg-if = "1.0.0"
+hubpack = "0.1.2"
+idyll_runtime = { version = "0.1.0", path = "../../sys/idyll_runtime" }
+serde = { version = "1.0.215", default-features = false, features = ["derive"] }
+stm32-metapac = "15.0.0"
+userlib = {workspace = true, features = ["no-panic"]}
+
+[[bin]]
+name = "drv-stm32xx-sys"
+test = false
+bench = false
+
+[build-dependencies]
+hubris-build.workspace = true
+
+[package.metadata.hubris.auto-features]
+chip = true

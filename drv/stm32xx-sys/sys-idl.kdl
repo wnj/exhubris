@@ -1,0 +1,194 @@
+// STM32 core driver IPC interface for STM32L4.
+
+interface "stm32-sys"
+
+// Common types for talking about pins:
+
+enum "Port" {
+    doc "A GPIO port name."
+
+    case "A"
+    case "B"
+    case "C"
+    case "D"
+    // E not implemented by any supported parts yet
+    case "F"
+    // G not implemented by any supported parts yet
+    case "H"
+    // I and later not implemented by any supported parts yet
+
+    rust-derive "Copy" "Clone" "Debug"
+}
+
+enum "Function" {
+    doc "An alternate function index for a pin."
+
+    case "AF0"
+    case "AF1"
+    case "AF2"
+    case "AF3"
+    case "AF4"
+    case "AF5"
+    case "AF6"
+    case "AF7"
+
+    case "AF8"
+    case "AF9"
+    case "AF10"
+    case "AF11"
+    case "AF12"
+    case "AF13"
+    case "AF14"
+    case "AF15"
+
+    rust-derive "Copy" "Clone" "Debug"
+}
+
+enum "Pull" {
+    doc "Possible settings for pin pull resistors."
+
+    case "Up"
+    case "Down"
+
+    rust-derive "Copy" "Clone" "Debug"
+}
+
+// Operations:
+
+method "set_pin_output" {
+    doc "Configures a pin into output mode."
+
+    operation 0
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "set_pins_output" {
+    doc "Configures a pin into output mode."
+
+    operation 9
+    arg "port" "Port"
+    arg "mask" "u16"
+    auto-retry
+}
+
+method "set_pin_high" {
+    doc "Sets a pin's output state to high. This won't have any immediate
+         effect unless the pin is in output mode."
+
+    operation 1
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "set_pin_low" {
+    doc "Sets a pin's output state to low. This won't have any immediate
+         effect unless the pin is in output mode."
+
+    operation 2
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "toggle_pin" {
+    doc "Inverts a pin's output state. This won't have any immediate effect
+         unless the pin is in output mode."
+
+    operation 3
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "set_pin_alternate_mode" {
+    doc "Configures a pin into Alternate mode, selecting a specific alternate
+         function index."
+
+    operation 4
+    arg "port" "Port"
+    arg "pin" "u8"
+    arg "function" "Function"
+    auto-retry
+}
+
+method "set_pin_input" {
+    doc "Configures a pin into input mode."
+
+    operation 6
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
+method "is_pin_high" {
+    doc "Senses the current level of a pin."
+
+    operation 7
+    arg "port" "Port"
+    arg "pin" "u8"
+    result "bool"
+    auto-retry
+}
+
+method "read_pins" {
+    doc "Senses the current level of pins on a port."
+
+    operation 10
+    arg "port" "Port"
+    result "u16"
+    auto-retry
+}
+
+method "set_pin_pull" {
+    doc "Configures pull resistors on a pin."
+
+    operation 8
+    arg "port" "Port"
+    arg "pin" "u8"
+    arg "pull" "Option<Pull>"
+    auto-retry
+}
+
+method "enable_clock" {
+    doc "Enables the clock signal to a peripheral."
+
+    operation 5
+    arg "peripheral" "PeripheralName"
+    auto-retry
+}
+
+on-cfg "hubris_chip" {
+    is "STM32G031" {
+        enum "PeripheralName" {
+            doc "An enumeration of all RCC-controlled peripherals on the chip."
+        
+            case "Usart2" 0b10_10001
+        
+            rust-derive "Copy" "Clone" "Debug"
+        }
+    }
+    is "STM32L412" {
+        enum "PeripheralName" {
+            doc "An enumeration of all RCC-controlled peripherals on the chip."
+
+            // Bitwise value is:
+            // bits 4:0: bit index in control registers
+            // bits 7:5: register index:
+            //  000 AHB1ENR
+            //  001 AHB2ENR
+            //  010 AHB3ENR
+            //  011 APB1ENR1
+            //  100 APB1ENR2
+            //  101 APB2ENR
+
+            case "Tim2" 0b011_00000 // APB1ENR1 bit 0
+            case "Crs" 0b011_11000 // APB1ENR1 bit 24
+            case "UsbFs" 0b011_11010 // APB1ENR1 bit 26
+
+            rust-derive "Copy" "Clone" "Debug"
+        }
+    }
+}
