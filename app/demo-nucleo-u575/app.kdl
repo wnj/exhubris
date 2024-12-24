@@ -23,8 +23,8 @@ task "super" {
     priority 0
 }
 
-/-task "sys" {
-    workspace-crate "drv-stm32u5-sys"
+task "sys" {
+    workspace-crate "drv-stm32xx-sys"
     stack-size 256
     priority 1
     uses-peripheral "rcc"

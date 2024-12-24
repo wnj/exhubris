@@ -191,4 +191,23 @@ on-cfg "hubris_chip" {
             rust-derive "Copy" "Clone" "Debug"
         }
     }
+    is "STM32U575" {
+        enum "PeripheralName" {
+            doc "An enumeration of all RCC-controlled peripherals on the chip."
+
+            // Bitwise value is:
+            // bits 4:0: bit index in control registers
+            // bits 7:5: register index:
+            //  000 AHB1ENR
+            //  001 AHB2ENR1
+            //  010 AHB2ENR2
+            //  011 AHB3ENR
+            //  100 APB1ENR1
+            //  101 APB1ENR2
+            //  110 APB2ENR
+            //  111 APB3ENR
+
+            rust-derive "Copy" "Clone" "Debug"
+        }
+    }
 }

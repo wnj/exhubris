@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
 chip-stm32l412kb = ["stm32-metapac/stm32l412kb"]
+chip-stm32u575zi = ["stm32-metapac/stm32u575zi"]
 
 [dependencies]
 cfg-if = "1.0.0"

@@ -25,6 +25,8 @@ fn main() -> ! {
             rcc.ahb2enr().modify(|r| r.0 |= 0b1000_1111);
         } else if #[cfg(hubris_chip = "STM32G031")] {
             rcc.gpioenr().modify(|r| r.0 |= 0b101111);
+        } else if #[cfg(hubris_chip = "STM32U575")] {
+            rcc.ahb2enr1().modify(|r| r.0 |= 0b11_1111_1111);
         } else {
             compile_error!("unimplemented target chip");
         }
@@ -148,6 +150,17 @@ impl Stm32Sys for Server {
                     1 => rcc.ahbenr().modify(|r| r.0 |= 1 << bit_no),
                     2 => rcc.apbenr1().modify(|r| r.0 |= 1 << bit_no),
                     _ => rcc.apbenr2().modify(|r| r.0 |= 1 << bit_no),
+                }
+            } else if #[cfg(hubris_chip = "STM32U575")] {
+                match reg_no {
+                    0 => rcc.ahb1enr().modify(|r| r.0 |= 1 << bit_no),
+                    1 => rcc.ahb2enr1().modify(|r| r.0 |= 1 << bit_no),
+                    2 => rcc.ahb2enr2().modify(|r| r.0 |= 1 << bit_no),
+                    3 => rcc.ahb3enr().modify(|r| r.0 |= 1 << bit_no),
+                    4 => rcc.apb1enr1().modify(|r| r.0 |= 1 << bit_no),
+                    5 => rcc.apb1enr2().modify(|r| r.0 |= 1 << bit_no),
+                    6 => rcc.apb2enr().modify(|r| r.0 |= 1 << bit_no),
+                    _ => rcc.apb3enr().modify(|r| r.0 |= 1 << bit_no),
                 }
             } else {
                 compile_error!("unsupported chip family");
