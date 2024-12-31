@@ -58,3 +58,9 @@ peripheral "gpios" {
     base 0x4202_0000
     size 0x2800
 }
+
+peripheral "usb_otg_fs" {
+    base 0x4204_0000
+    size 0x8_0000
+    irq "irq" 73
+}
