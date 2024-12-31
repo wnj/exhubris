@@ -217,6 +217,9 @@ on-cfg "hubris_chip" {
             //  110 APB2ENR
             //  111 APB3ENR
 
+            case "UsbOtg" 0b001_01110
+            case "Crs" 0b100_11000
+
             rust-derive "Copy" "Clone" "Debug"
         }
     }
