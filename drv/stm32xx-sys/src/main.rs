@@ -103,6 +103,14 @@ impl Stm32Sys for Server {
         Ok(())
     }
 
+    fn set_pin_analog(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),ReplyFaultReason> {
+        let pin = convert_pin(pin);
+        let gpio = get_port(port)?;
+        gpio.moder().modify(|v| v.set_moder(pin, Moder::ANALOG));
+
+        Ok(())
+    }
+
     fn set_pin_input(&mut self, _: Meta, port:Port, pin:u8) -> Result<(),ReplyFaultReason> {
         let gpio = get_port(port)?;
         gpio.moder().modify(|v| v.set_moder(convert_pin(pin), Moder::INPUT));

@@ -123,6 +123,16 @@ method "set_pin_input" {
     auto-retry
 }
 
+method "set_pin_analog" {
+    doc "Configures a pin into Analog mode, putting it in a high impedance
+            state."
+
+    operation 11
+    arg "port" "Port"
+    arg "pin" "u8"
+    auto-retry
+}
+
 method "is_pin_high" {
     doc "Senses the current level of a pin."
 
