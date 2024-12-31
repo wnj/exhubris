@@ -14,7 +14,7 @@ board "nucleo-u575zi" {
 kernel {
     workspace-crate "kernel-generic-stm32u575"
     stack-size 640
-    features "clock-160mhz-hsi16"
+    features "clock-160mhz-hsi16" "clock-hsi48-on" "pwr-vddusb-valid"
 }
 
 task "super" {
