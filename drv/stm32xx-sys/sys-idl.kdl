@@ -161,6 +161,15 @@ method "enable_clock" {
 }
 
 on-cfg "hubris_chip" {
+    is "STM32G030" {
+        enum "PeripheralName" {
+            doc "An enumeration of all RCC-controlled peripherals on the chip."
+        
+            case "Usart2" 0b10_10001
+        
+            rust-derive "Copy" "Clone" "Debug"
+        }
+    }
     is "STM32G031" {
         enum "PeripheralName" {
             doc "An enumeration of all RCC-controlled peripherals on the chip."

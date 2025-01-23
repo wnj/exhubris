@@ -1,0 +1,102 @@
+// Demo Application Definition
+
+// App name is used for output files etc. It must be the first non-blank
+// non-comment line in the file.
+app "demo"
+
+// Currently the board information is inlined. It would be nice to refer to an
+// external file, like we already do for chip definitions.
+board "bare-metal-stm32g030" {
+    chip "stm32g030k8"
+}
+
+// Instructions for building the kernel.
+kernel {
+    workspace-crate "kernel-generic-stm32g030"
+    stack-size 544
+    features "clock-64mhz-hsi16"
+}
+
+task "super" {
+    workspace-crate "minisuper"
+    stack-size 128
+    priority 0
+}
+
+task "sys" {
+    workspace-crate "drv-stm32xx-sys"
+    stack-size 256
+    priority 1
+    features "chip-stm32g030k8"
+    uses-peripheral "rcc"
+    uses-peripheral "gpios"
+}
+
+task "echo" {
+    workspace-crate "uart-echo"
+    stack-size 256
+    priority 2
+    features "chip-stm32g030k8"
+    uses-task "sys"
+    uses-peripheral "usart2" {
+        irq "irq" "usart-irq"
+    }
+    config {
+        uart-clock-hz 64_000_000
+        baud-rate 115_200
+        pins {
+            - name="A2" af=1
+            - name="A3" af=1
+        }
+    }
+}
+
+// IPC server.
+task "pong" {
+    workspace-crate "pong"
+    stack-size 160
+    priority 2
+}
+
+// IPC generator.
+task "ping" {
+    workspace-crate "ping"
+    stack-size 256
+    priority 3
+    uses-task "pong"
+    uses-task "sys"
+}
+
+// blink LED
+task "blinky" {
+    workspace-crate "blinky"
+    stack-size 160
+    priority 3
+    uses-task "sys"
+
+    notification "timer-blinky"
+}
+
+// 7-segment hex display
+task "display" {
+   workspace-crate "display"
+    stack-size 256
+    priority 3
+    uses-task "sys"
+
+  //  uses-peripheral "tim17" {
+  //      irq "irq" "tim-irq"
+  //  }
+
+    notification "timer-display"
+}
+
+// Idle task. This must be the lowest priority task.
+task "idle" {
+    workspace-crate "idle"
+    stack-size 32
+    priority 4
+
+    // This makes Humility work a _lot_ better.
+    features "insomniac"
+}

@@ -1,0 +1,3 @@
+# Display task
+
+This task deploys a 4 digit 7-segment hexadecimal (clock) display.

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+chip-stm32g030k8 = ["stm32-metapac/stm32g030k8"]
 chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
 chip-stm32l412kb = ["stm32-metapac/stm32l412kb"]
 chip-stm32u575zi = ["stm32-metapac/stm32u575zi"]
@@ -14,7 +15,7 @@ hubpack = "0.1.2"
 idyll_runtime = { version = "0.1.0", path = "../../sys/idyll_runtime" }
 serde = { version = "1.0.215", default-features = false, features = ["derive"] }
 stm32-metapac = "15.0.0"
-userlib = {workspace = true, features = ["no-panic"]}
+userlib = { workspace = true, features = ["no-panic"] }
 
 [[bin]]
 name = "drv-stm32xx-sys"

@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 # It is annoying that the chip features are specified down to the package level,
 # but, that is how the stm32-metapac do.
+chip-stm32g030k8 = ["stm32-metapac/stm32g030k8"]
 chip-stm32g031k8 = ["stm32-metapac/stm32g031k8"]
 
 [dependencies]
