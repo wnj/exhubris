@@ -1,15 +1,15 @@
 // USBHID driver interface.
 
-interface "usb-hid"
+interface usb-hid
 
 // Operations:
 
-method "enqueue_report" {
+method enqueue_report {
     doc "Makes a report ready to transmit when requested by the host."
 
     operation 0
-    arg "endpoint" "u8"
-    lease "report" "u8" {
+    arg endpoint u8
+    lease report u8 {
         read
     }
 
@@ -17,29 +17,29 @@ method "enqueue_report" {
     result "Result<bool, EnqueueError>"
 }
 
-method "get_event" {
+method get_event {
     doc "Retrieves the pending event from the USB stack, if any."
 
     operation 1
 
-    result "Option<UsbEvent>"
+    result Option<UsbEvent>
     auto-retry
 }
 
-enum "EnqueueError" {
-    on-task-death "Died"
+enum EnqueueError {
+    on-task-death Died
 
-    case "Died"
+    case Died
 
-    rust-derive "Copy" "Clone" "Debug"
+    rust-derive Copy Clone Debug
 }
 
-enum "UsbEvent" {
-    case "Reset"
-    case "Configured"
-    case "ReportDescriptorNeeded" {
-        field "length" "u16"
+enum UsbEvent {
+    case Reset
+    case Configured
+    case ReportDescriptorNeeded {
+        field length u16
     }
 
-    rust-derive "Copy" "Clone" "Debug"
+    rust-derive Copy Clone Debug
 }

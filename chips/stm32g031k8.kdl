@@ -1,29 +1,29 @@
-chip "STM32G031K8"
-target-triple "thumbv6m-none-eabi"
+chip STM32G031K8
+target-triple thumbv6m-none-eabi
 vector-table-size 0xC0
-probe-rs-name "STM32G031K8Tx"
+probe-rs-name STM32G031K8Tx
 
 compatible {
-    - "STM32G031K8" // flash size + pin count
-    - "STM32G031x8" // flash size only
-    - "STM32G031" // subfamily only
-    - "STM32G0" // family only
-    - "arm-cortex-m0plus" // microprocessor generic name
+    - STM32G031K8 // flash size + pin count
+    - STM32G031x8 // flash size only
+    - STM32G031 // subfamily only
+    - STM32G0 // family only
+    - arm-cortex-m0plus // microprocessor generic name
 }
 
 memory {
-    region "vectors" {
+    region vectors {
         base 0x0800_0000
         size 0x110 // enlarged to accommodate header
         read
     }
-    region "flash" {
+    region flash {
         base 0x0800_0110
         size 0xFEF0
         read
         execute
     }
-    region "ram" {
+    region ram {
         base 0x2000_0000
         size 8192
         read
@@ -31,25 +31,25 @@ memory {
     }
 }
 
-peripheral "usart1" {
+peripheral usart1 {
     base 0x4001_3800
     size 0x400
-    irq "irq" 27
+    irq irq 27
 }
 
-peripheral "usart2" {
+peripheral usart2 {
     base 0x4000_4400
     size 0x400
-    irq "irq" 28  // note: conflicts with LPUART2
+    irq irq 28  // note: conflicts with LPUART2
 }
 
-peripheral "rcc" {
+peripheral rcc {
     base 0x4002_1000
     size 0x400
-    irq "irq" 4
+    irq irq 4
 }
 
-peripheral "gpios" {
+peripheral gpios {
     base 0x5000_0000
     size 0x2000
 }

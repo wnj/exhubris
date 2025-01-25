@@ -2,57 +2,57 @@
 
 // App name is used for output files etc. It must be the first non-blank
 // non-comment line in the file.
-app "demo-nucleo-u575"
+app demo-nucleo-u575
 
 // Currently the board information is inlined. It would be nice to refer to an
 // external file, like we already do for chip definitions.
-board "nucleo-u575zi" {
-    chip "stm32u575zi_ns"
+board nucleo-u575zi {
+    chip stm32u575zi_ns
 }
 
 // Instructions for building the kernel.
 kernel {
-    workspace-crate "kernel-generic-stm32u575"
+    workspace-crate kernel-generic-stm32u575
     stack-size 640
-    features "clock-160mhz-hsi16" "clock-hsi48-on" "pwr-vddusb-valid"
+    features clock-160mhz-hsi16 clock-hsi48-on pwr-vddusb-valid
 }
 
-task "super" {
-    workspace-crate "minisuper"
+task super {
+    workspace-crate minisuper
     stack-size 192
     priority 0
 }
 
-task "sys" {
-    workspace-crate "drv-stm32xx-sys"
+task sys {
+    workspace-crate drv-stm32xx-sys
     stack-size 192
     priority 1
-    uses-peripheral "rcc"
-    uses-peripheral "gpios"
+    uses-peripheral rcc
+    uses-peripheral gpios
 }
 
 // IPC server.
-task "pong" {
-    workspace-crate "pong"
+task pong {
+    workspace-crate pong
     stack-size 256
     priority 2
 }
 
 // IPC generator.
-task "ping" {
-    workspace-crate "ping"
+task ping {
+    workspace-crate ping
     stack-size 256
     priority 3
-    uses-task "pong"
-    uses-task "sys"
+    uses-task pong
+    uses-task sys
     config {
-        led-pin "C7"
+        led-pin C7
     }
 }
 
 // Idle task. This must be the lowest priority task.
-task "idle" {
-    workspace-crate "idle"
+task idle {
+    workspace-crate idle
     stack-size 128
     priority 4
 }

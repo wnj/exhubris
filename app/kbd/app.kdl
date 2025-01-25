@@ -7,43 +7,43 @@
 // 3. keyboard converts this into a logical key matrix and posts the results to
 //    usbhid.
 
-app "kbd"
+app kbd
 
 // Currently the board information is inlined. It would be nice to refer to an
 // external file, like we already do for chip definitions.
-board "fourk" {
-    chip "stm32l412kb"
+board fourk {
+    chip stm32l412kb
 }
 
 // Instructions for building the kernel.
 kernel {
-    workspace-crate "kernel-generic-stm32l412"
-    features "clock-80mhz-hsi16" "clock-hsi48-on" "pwr-vddusb-valid"
+    workspace-crate kernel-generic-stm32l412
+    features clock-80mhz-hsi16 clock-hsi48-on pwr-vddusb-valid
     stack-size 640
 }
 
-task "super" {
-    workspace-crate "minisuper"
+task super {
+    workspace-crate minisuper
     stack-size 256
     priority 0
 }
 
-task "sys" {
-    workspace-crate "drv-stm32xx-sys"
+task sys {
+    workspace-crate drv-stm32xx-sys
     stack-size 224
     priority 1
-    uses-peripheral "rcc"
-    uses-peripheral "gpios"
+    uses-peripheral rcc
+    uses-peripheral gpios
 }
 
-task "usbhid" {
-    workspace-crate "drv-stm32l4-usb"
+task usbhid {
+    workspace-crate drv-stm32l4-usb
     stack-size 328
     priority 2
-    uses-task "sys"
-    uses-peripheral "crs"
-    uses-peripheral "usbfs_and_sram" {
-        irq "irq" "usb-irq"
+    uses-task sys
+    uses-peripheral crs
+    uses-peripheral usbfs_and_sram {
+        irq irq usb-irq
     }
     config {
         on_event "scanner#usb_event_ready"
@@ -51,44 +51,44 @@ task "usbhid" {
     }
 }
 
-task "scanner" {
-    workspace-crate "kbd-basic-scanner"
+task scanner {
+    workspace-crate kbd-basic-scanner
     stack-size 512
     priority 3
-    uses-task "sys"
-    uses-task "usbhid"
+    uses-task sys
+    uses-task usbhid
 
     // The GPIOs are aliased into both this task and SYS, because this task
     // needs high-rate low-latency access to perform matrix scanning. In
     // practice, sharing the GPIO blocks in this way is unlikely to cause
     // problems (famous last words?)
-    uses-peripheral "gpios"
+    uses-peripheral gpios
 
     // While we're at it, we need a hardware timer to do more precise sleeps
     // than the kernel offers.
-    uses-peripheral "tim2" {
-        irq "irq" "tim-irq"
+    uses-peripheral tim2 {
+        irq irq tim-irq
     }
 
-    notification "usb_event_ready"
-    notification "usb_report_needed"
+    notification usb_event_ready
+    notification usb_report_needed
 
     config {
         rows {
-            - "A0"
-            - "A1"
+            - A0
+            - A1
         }
         cols {
-            - "B0"
-            - "B1"
+            - B0
+            - B1
         }
     }
 }
 
 // Idle task. This must be the lowest priority task.
-task "idle" {
-    workspace-crate "idle"
+task idle {
+    workspace-crate idle
     stack-size 128
     priority 5
-    features "insomniac"
+    features insomniac
 }

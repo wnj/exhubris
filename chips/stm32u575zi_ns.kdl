@@ -1,13 +1,13 @@
-chip "STM32U575ZI-NS"
-target-triple "thumbv8m.main-none-eabihf"
-probe-rs-name "STM32U575ZITx"
+chip STM32U575ZI-NS
+target-triple thumbv8m.main-none-eabihf
+probe-rs-name STM32U575ZITx
 
 compatible {
-    - "STM32U575ZI"
-    - "STM32U575xI"
-    - "STM32U575"
-    - "STM32U5"
-    - "arm-cortex-m33"
+    - STM32U575ZI
+    - STM32U575xI
+    - STM32U575
+    - STM32U5
+    - arm-cortex-m33
 }
 
 // L412 lacks I2C4 and thus has a slightly smaller vector table than some other
@@ -15,18 +15,18 @@ compatible {
 vector-table-size 0x274
 
 memory {
-    region "vectors" {
+    region vectors {
         base 0x0800_0000
         size 0x2CC // enlarged to accommodate header
         read
     }
-    region "flash" {
+    region flash {
         base 0x0800_02CC
         size 0x1FFD34 // 2048 kiB - 0x2CC
         read
         execute
     }
-    region "ram" {
+    region ram {
         base 0x2000_0000
         size 0xC_0000 // 768 kiB
         read
@@ -34,33 +34,33 @@ memory {
     }
 }
 
-peripheral "tim2" {
+peripheral tim2 {
     base 0x4000_0000
     size 0x400
 }
 
-peripheral "crs" {
+peripheral crs {
     base 0x4000_6000
     size 0x400
 }
 
-peripheral "pwr" {
+peripheral pwr {
     base 0x4602_0800
     size 0x400
 }
 
-peripheral "rcc" {
+peripheral rcc {
     base 0x4602_0C00
     size 0x400
 }
 
-peripheral "gpios" {
+peripheral gpios {
     base 0x4202_0000
     size 0x2800
 }
 
-peripheral "usb_otg_fs" {
+peripheral usb_otg_fs {
     base 0x4204_0000
     size 0x8_0000
-    irq "irq" 73
+    irq irq 73
 }
