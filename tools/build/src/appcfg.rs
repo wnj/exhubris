@@ -11,7 +11,7 @@ use crate::{config, BuildEnv};
 #[derive(Clone, Debug)]
 pub struct AppDef {
     /// Source code of the root app def file, for citations.
-    pub source: Arc<NamedSource>,
+    pub source: Arc<NamedSource<String>>,
 
     /// Name of app, for naming images and such.
     pub name: Spanned<String>,
@@ -33,7 +33,7 @@ impl AppDef {
 pub struct BoardDef {
     /// Source code containing the board def, for citations; this may be the file
     /// itself, or may be a file into which it has been inlined.
-    pub source: Arc<NamedSource>,
+    pub source: Arc<NamedSource<String>>,
 
     /// Name of board, for matching in conditional compilation.
     pub name: Spanned<String>,
@@ -45,7 +45,7 @@ pub struct BoardDef {
 pub struct ChipDef {
     /// Source code containing the chip def, for citations; this may be the file
     /// itself, or may be a file into which it has been inlined.
-    pub source: Arc<NamedSource>,
+    pub source: Arc<NamedSource<String>>,
 
     /// Name of chip model, for matching in conditional compilation.
     pub name: Spanned<String>,
@@ -212,7 +212,7 @@ impl<T> Spanned<T> {
 pub fn parse_source_str<R>(
     path: &str,
     src: &str,
-    body: impl FnOnce(Arc<NamedSource>, KdlDocument) -> miette::Result<R>,
+    body: impl FnOnce(Arc<NamedSource<String>>, KdlDocument) -> miette::Result<R>,
 ) -> miette::Result<R> {
     let source = Arc::new(NamedSource::new(
             path,
@@ -236,7 +236,7 @@ pub fn parse_app_str(
 }
 
 pub fn parse_app(
-    source: Arc<NamedSource>,
+    source: Arc<NamedSource<String>>,
     doc: &KdlDocument,
     ctx: &dyn LoadContext,
 ) -> miette::Result<AppDef> {
@@ -246,7 +246,7 @@ pub fn parse_app(
         })?;
         if first.name().value() != "app" {
             bail!(
-                labels=[LabeledSpan::at(*first.name().span(), "expected 'app' here")],
+                labels=[LabeledSpan::at(first.name().span(), "expected 'app' here")],
                 "this may not be an appconfig, first node is not 'app'"
             );
         }
@@ -312,35 +312,35 @@ pub fn parse_app(
 }
 
 pub fn get_unique_child_or_include<T>(
-    source: &Arc<NamedSource>,
+    source: &Arc<NamedSource<String>>,
     doc: &KdlDocument,
     name: &str,
     ns: Namespace,
     ctx: &dyn LoadContext,
-    proc: impl FnOnce(Arc<NamedSource>, Spanned<String>, &KdlDocument) -> miette::Result<T>,
+    proc: impl FnOnce(Arc<NamedSource<String>>, Spanned<String>, &KdlDocument) -> miette::Result<T>,
 ) -> miette::Result<T> {
     let child = get_unique_child(doc, name)?;
     if child.children().is_some() {
         if child.entries().len() != 1 {
             bail!(
-                labels=[LabeledSpan::at(*child.span(), "missing here")],
+                labels=[LabeledSpan::at(child.span(), "missing here")],
                 "expected a name (string) argument"
             );
         }
         let name_entry = &child.entries()[0];
         if name_entry.name().is_some() {
             bail!(
-                labels=[LabeledSpan::at(*name_entry.span(), "has a property name")],
+                labels=[LabeledSpan::at(name_entry.span(), "has a property name")],
                 "expected an argument, not a property"
             );
         }
         let name_str = name_entry.value().as_string().ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*name_entry.span(), "not a string")],
+                labels = [LabeledSpan::at(name_entry.span(), "not a string")],
                 "expected a string name"
             )
         })?;
-        let name_str = Spanned::new(name_str.to_string(), *name_entry.span());
+        let name_str = Spanned::new(name_str.to_string(), name_entry.span());
 
         proc(source.clone(), name_str, required_children(child)?)
     } else {
@@ -351,7 +351,7 @@ pub fn get_unique_child_or_include<T>(
         })?;
         if first.name().value() != name {
             bail!(
-                labels=[LabeledSpan::at(*first.name().span(), "expected here")],
+                labels=[LabeledSpan::at(first.name().span(), "expected here")],
                 "this may not be the right kind of config, first node is not '{name}'"
             );
         }
@@ -368,7 +368,7 @@ pub fn get_unique_child_or_include<T>(
 }
 
 pub fn parse_board(
-    source: Arc<NamedSource>,
+    source: Arc<NamedSource<String>>,
     name: Spanned<String>,
     doc: &KdlDocument,
     ctx: &dyn LoadContext,
@@ -392,7 +392,7 @@ pub fn parse_board(
 }
 
 pub fn parse_chip(
-    source: Arc<NamedSource>,
+    source: Arc<NamedSource<String>>,
     name: Spanned<String>,
     doc: &KdlDocument,
 ) -> miette::Result<ChipDef> {
@@ -438,7 +438,7 @@ pub fn parse_chip(
 }
 
 pub fn parse_task(
-    source: Arc<NamedSource>,
+    source: Arc<NamedSource<String>>,
     doc: &KdlDocument,
     name: &str,
 ) -> miette::Result<TaskDef> {
@@ -478,13 +478,13 @@ pub fn parse_task(
                     let rev = get_unique_string_value(c, "rev")?.into_value();
                     Spanned::new(
                         PackageSource::GitCrate { repo, name, rev, },
-                        *gitatts.span(),
+                        gitatts.span(),
                     )
                 }
                 (Some(a), Some(b)) => bail!(
                     labels=[
                         LabeledSpan::at(a.span(), "here"),
-                        LabeledSpan::at(*b.span(), "also here"),
+                        LabeledSpan::at(b.span(), "also here"),
                     ],
                     "too many crate specs for task",
                 ),
@@ -524,7 +524,7 @@ pub fn parse_task(
                 let record = if let Some(body) = pnode.children() {
                     parse_peripheral_use_body(body)?
                 } else {
-                    Spanned::new(PeripheralUse::default(), *pnode.span())
+                    Spanned::new(PeripheralUse::default(), pnode.span())
                 };
                 Ok((name, record))
             })
@@ -532,7 +532,7 @@ pub fn parse_task(
 
         let servers = get_uniquely_named_children(doc, "uses-task")?;
         let servers = servers.into_iter()
-            .map(|(name, node)| (name, *node.span()))
+            .map(|(name, node)| (name, node.span()))
             .collect();
 
         let sw_nots = get_uniquely_named_children(doc, "notification")?;
@@ -557,14 +557,14 @@ pub fn parse_task(
                 let e = node.entries();
                 if e.len() != 2 {
                     bail!(
-                        labels=[LabeledSpan::at(*node.span(), "expected two args")],
+                        labels=[LabeledSpan::at(node.span(), "expected two args")],
                         "wrong number of arguments"
                     )
                 }
                 let dest = &e[1];
                 let Some(dest) = dest.value().as_string() else {
                     bail!(
-                        labels=[LabeledSpan::at(*dest.span(), "not a string")],
+                        labels=[LabeledSpan::at(dest.span(), "not a string")],
                         "target memory region should be a string"
                     )
                 };
@@ -594,7 +594,7 @@ pub fn parse_task(
 }
 
 pub fn parse_kernel(
-    source: Arc<NamedSource>,
+    source: Arc<NamedSource<String>>,
     doc: &KdlDocument,
 ) -> miette::Result<KernelDef> {
     add_source(&source, || {
@@ -622,13 +622,13 @@ pub fn parse_kernel(
                     let rev = get_unique_string_value(c, "rev")?.into_value();
                     Spanned::new(
                         PackageSource::GitCrate { repo, name, rev, },
-                        *gitatts.span(),
+                        gitatts.span(),
                     )
                 }
                 (Some(a), Some(b)) => bail!(
                     labels=[
                         LabeledSpan::at(a.span(), "here"),
-                        LabeledSpan::at(*b.span(), "also here"),
+                        LabeledSpan::at(b.span(), "also here"),
                     ],
                     "too many crate specs for kernel",
                 ),
@@ -673,7 +673,7 @@ pub fn parse_kernel(
 fn parse_region(node: &KdlNode) -> miette::Result<Spanned<RegionDef>> {
     let doc = node.children().ok_or_else(|| {
         miette!(
-            labels = [LabeledSpan::at(*node.span(), "missing body")],
+            labels = [LabeledSpan::at(node.span(), "missing body")],
             "region node must have a body"
         )
     })?;
@@ -706,13 +706,13 @@ fn parse_region(node: &KdlNode) -> miette::Result<Spanned<RegionDef>> {
         write,
         execute,
     };
-    Ok(Spanned::new(region, *node.span()))
+    Ok(Spanned::new(region, node.span()))
 }
 
 fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
     let doc = node.children().ok_or_else(|| {
         miette!(
-            labels = [LabeledSpan::at(*node.span(), "missing body")],
+            labels = [LabeledSpan::at(node.span(), "missing body")],
             "region node must have a body"
         )
     })?;
@@ -739,10 +739,10 @@ fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
     let mut interrupts = BTreeMap::new();
     for (name, irqnode) in irqs {
         let entries = irqnode.entries();
-        let irq = entries.get(1).and_then(|e| e.value().as_i64().map(|i| Spanned::new(i, *e.span())));
+        let irq = entries.get(1).and_then(|e| e.value().as_integer().map(|i| Spanned::new(i, e.span())));
         if entries.len() != 2 || irq.is_none() {
             bail!(
-                labels = [LabeledSpan::at(*irqnode.span(), "wrong arguments")],
+                labels = [LabeledSpan::at(irqnode.span(), "wrong arguments")],
                 "'irq' should have two arguments: a name (string) and a number (integer)",
             );
         }
@@ -759,7 +759,7 @@ fn parse_peripheral(node: &KdlNode) -> miette::Result<Spanned<PeripheralDef>> {
         interrupts.insert(name, irq.into_value());
     }
 
-    Ok(Spanned::new(PeripheralDef { base, size, interrupts }, *node.span()))
+    Ok(Spanned::new(PeripheralDef { base, size, interrupts }, node.span()))
 }
 
 fn parse_peripheral_use_body(doc: &KdlDocument) -> miette::Result<Spanned<PeripheralUse>> {
@@ -769,25 +769,25 @@ fn parse_peripheral_use_body(doc: &KdlDocument) -> miette::Result<Spanned<Periph
             if node.entries().len() == 2 {
                 let notification_name = node.entries()[1].value().as_string().ok_or_else(|| {
                     miette!(
-                        labels = [LabeledSpan::at(*node.entries()[0].span(), "not a string")],
+                        labels = [LabeledSpan::at(node.entries()[0].span(), "not a string")],
                         "expected a string"
                     )
                 })?;
                 Ok((peripheral_name, notification_name.to_string()))
             } else {
                 bail!(
-                    labels = [LabeledSpan::at(*node.span(), "wrong number of arguments")],
+                    labels = [LabeledSpan::at(node.span(), "wrong number of arguments")],
                     "uses-peripheral.irq should have exactly two arguments"
                 );
             }
         })
         .collect::<miette::Result<BTreeMap<String, String>>>()?;
 
-    Ok(Spanned::new(PeripheralUse { interrupts }, *doc.span()))
+    Ok(Spanned::new(PeripheralUse { interrupts }, doc.span()))
 }
 
 
-pub fn add_source<T>(source: &Arc<NamedSource>, body: impl FnOnce() -> miette::Result<T>) -> miette::Result<T> {
+pub fn add_source<T>(source: &Arc<NamedSource<String>>, body: impl FnOnce() -> miette::Result<T>) -> miette::Result<T> {
     body().map_err(|e| {
         if e.source().is_none() {
             e.with_source_code(source.clone())
@@ -802,7 +802,7 @@ pub(crate) fn no_arguments(node: &KdlNode) -> miette::Result<()> {
         Ok(())
     } else {
         Err(miette!(
-            labels = [LabeledSpan::at(*node.span(), "has args/properties")],
+            labels = [LabeledSpan::at(node.span(), "has args/properties")],
             "node must not have arguments or properties"
         ))
     }
@@ -813,7 +813,7 @@ pub(crate) fn no_children(node: &KdlNode) -> miette::Result<()> {
         Ok(())
     } else {
         Err(miette!(
-            labels = [LabeledSpan::at(*node.span(), "has children")],
+            labels = [LabeledSpan::at(node.span(), "has children")],
             "node must not have children"
         ))
     }
@@ -822,7 +822,7 @@ pub(crate) fn no_children(node: &KdlNode) -> miette::Result<()> {
 pub(crate) fn required_children(node: &KdlNode) -> miette::Result<&KdlDocument> {
     node.children().ok_or_else(|| {
         miette!(
-            labels = [LabeledSpan::at(*node.span(), "missing body")],
+            labels = [LabeledSpan::at(node.span(), "missing body")],
             "{} node must have a body",
             node.name()
         )
@@ -832,10 +832,16 @@ pub(crate) fn required_children(node: &KdlNode) -> miette::Result<&KdlDocument> 
 pub(crate) fn get_unique_i64_value(doc: &KdlDocument, name: &str) -> miette::Result<Spanned<i64>> {
     get_unique_value(doc, name)?
         .try_map_with_span(|v, span| {
-            v.as_i64().ok_or_else(|| {
+            let i = v.as_integer().ok_or_else(|| {
                 miette!(
                     labels = [LabeledSpan::at(span, "not an integer")],
                     "value for {name} must be an integer"
+                )
+            })?;
+            i64::try_from(i).map_err(|_| {
+                miette!(
+                    labels = [LabeledSpan::at(span, "not an i64")],
+                    "value for {name} must be in range for an i64"
                 )
             })
         })
@@ -857,7 +863,7 @@ fn get_unique_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<Span
     get_unique_optional_value(doc, name)?
         .ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*doc.span(), "not found in this")],
+                labels = [LabeledSpan::at(doc.span(), "not found in this")],
                 "required node '{name}' is missing",
             )
         })
@@ -871,7 +877,7 @@ fn get_unique_optional_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Re
     match node.entries().len() {
         0 => {
             Err(miette!(
-                labels = [LabeledSpan::at(*node.span(), "node without value")],
+                labels = [LabeledSpan::at(node.span(), "node without value")],
                 "the {name} node must have a value"
             ))
         }
@@ -879,15 +885,15 @@ fn get_unique_optional_value<'d>(doc: &'d KdlDocument, name: &str) -> miette::Re
             let entry = node.entries().first().unwrap();
             if entry.name().is_some() {
                 return Err(miette!(
-                    labels = [LabeledSpan::at(*entry.span(), "property, not argument")],
+                    labels = [LabeledSpan::at(entry.span(), "property, not argument")],
                     "value for {name} should be an argument, not a property"
                 ));
             }
-            Ok(Some(Spanned::new(entry.value(), *entry.span())))
+            Ok(Some(Spanned::new(entry.value(), entry.span())))
         }
         n => {
             Err(miette!(
-                labels = [LabeledSpan::at(*node.span(), "node with too many values")],
+                labels = [LabeledSpan::at(node.span(), "node with too many values")],
                 "the {name} node must have one value, not {n}"
             ))
         }
@@ -917,20 +923,20 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
         for node in body.nodes() {
             if node.name().value() != "-" {
                 bail!(
-                    labels = [LabeledSpan::at(*node.name().span(), "not a dash")],
+                    labels = [LabeledSpan::at(node.name().span(), "not a dash")],
                     "elements of this array must all start with a dash (-)"
                 );
             }
             if let Some(ec) = node.children() {
                 bail!(
-                    labels = [LabeledSpan::at(*ec.span(), "unexpected body")],
+                    labels = [LabeledSpan::at(ec.span(), "unexpected body")],
                     "array element must be a simple string and not have a body"
                 );
             }
             match node.entries().len() {
                 0 => {
                     bail!(
-                        labels = [LabeledSpan::at(*node.span(), "missing string")],
+                        labels = [LabeledSpan::at(node.span(), "missing string")],
                         "each array element must be a dash followed by a string"
                     );
                 }
@@ -938,16 +944,16 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
                     let ent = node.entries().first().unwrap();
                     if ent.name().is_some() {
                         bail!(
-                            labels = [LabeledSpan::at(*ent.span(), "has a name")],
+                            labels = [LabeledSpan::at(ent.span(), "has a name")],
                             help = "to include an equals sign, quote the string",
                             "string required, not a property"
                         );
                     }
                     if let Some(s) = ent.value().as_string() {
-                        strings.push(Spanned::new(s.to_string(), *ent.span()));
+                        strings.push(Spanned::new(s.to_string(), ent.span()));
                     } else {
                         bail!(
-                            labels = [LabeledSpan::at(*ent.span(), "not a string")],
+                            labels = [LabeledSpan::at(ent.span(), "not a string")],
                             help = "to make this a string, quote it",
                             "string required"
                         );
@@ -955,7 +961,7 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
                 }
                 n => {
                     bail!(
-                        labels = [LabeledSpan::at(*node.span(), format!("this is {n} arguments"))],
+                        labels = [LabeledSpan::at(node.span(), format!("this is {n} arguments"))],
                         "each array element must be a dash followed by a single string"
                     );
                 }
@@ -965,15 +971,15 @@ fn get_unique_optional_string_array(doc: &KdlDocument, name: &str) -> miette::Re
         for entry in child.entries() {
             if entry.name().is_some() {
                 bail!(
-                    labels=[LabeledSpan::at(*entry.span(), "this is a property")],
+                    labels=[LabeledSpan::at(entry.span(), "this is a property")],
                     "expected simple arguments, not properties"
                 );
             }
             let s = entry.value().as_string().ok_or_else(|| miette!(
-                    labels=[LabeledSpan::at(*entry.span(), "not a string")],
+                    labels=[LabeledSpan::at(entry.span(), "not a string")],
                     "arguments to node '{name}' need to be strings"
             ))?;
-            strings.push(Spanned::new(s.to_string(), *entry.span()));
+            strings.push(Spanned::new(s.to_string(), entry.span()));
         }
     }
     Ok(strings)
@@ -992,9 +998,9 @@ pub(crate) fn get_unique_bool(doc: &KdlDocument, name: &str) -> miette::Result<b
     } else if found.len() > 1 {
         let mut labels = vec![];
         let first = found.remove(0);
-        labels.push(LabeledSpan::at(*first.span(), "found here 👍"));
+        labels.push(LabeledSpan::at(first.span(), "found here 👍"));
         for dupe in found {
-            labels.push(LabeledSpan::at(*dupe.span(), "also found here 😕"));
+            labels.push(LabeledSpan::at(dupe.span(), "also found here 😕"));
         }
         Err(diagnostic!(
             labels = labels,
@@ -1019,9 +1025,9 @@ fn get_unique_optional_child<'d>(doc: &'d KdlDocument, name: &str) -> miette::Re
     } else if found.len() > 1 {
         let mut labels = vec![];
         let first = found.remove(0);
-        labels.push(LabeledSpan::at(*first.span(), "found here 👍"));
+        labels.push(LabeledSpan::at(first.span(), "found here 👍"));
         for dupe in found {
-            labels.push(LabeledSpan::at(*dupe.span(), "also found here 😕"));
+            labels.push(LabeledSpan::at(dupe.span(), "also found here 😕"));
         }
         Err(diagnostic!(
             labels = labels,
@@ -1036,7 +1042,7 @@ fn get_unique_child<'d>(doc: &'d KdlDocument, name: &str) -> miette::Result<&'d 
     get_unique_optional_child(doc, name)?
         .ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*doc.span(), "not found in this")],
+                labels = [LabeledSpan::at(doc.span(), "not found in this")],
                 "required node '{name}' is missing",
             )
         })
@@ -1058,15 +1064,15 @@ pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) 
 
     let mut by_name = IndexMap::new();
     for node in found {
-        let argval = node.get(0).ok_or_else(|| {
+        let argval = node.entry(0).ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*node.span(), "should have a string argument")],
+                labels = [LabeledSpan::at(node.span(), "should have a string argument")],
                 "{name} missing name argument"
             )
         })?;
         let nodename = argval.value().as_string().ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*argval.span(), "should be a string")],
+                labels = [LabeledSpan::at(argval.span(), "should be a string")],
                 "{name} name argument isn't a string"
             )
         })?;
@@ -1078,8 +1084,8 @@ pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) 
             indexmap::map::Entry::Occupied(e) => {
                 return Err(miette!(
                     labels = [
-                        LabeledSpan::at(*e.get().span(), "previously found here"),
-                        LabeledSpan::at(*node.span(), "later found here"),
+                        LabeledSpan::at(e.get().span(), "previously found here"),
+                        LabeledSpan::at(node.span(), "later found here"),
                     ],
                     "duplicate {name} named {nodename}"
                 ));
@@ -1091,7 +1097,7 @@ pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) 
 }
 
 pub trait LoadContext {
-    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource>, KdlDocument)>;
+    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -1112,7 +1118,7 @@ impl Display for Namespace {
 pub struct SelfContained;
 
 impl LoadContext for SelfContained {
-    fn get_resource(&self, _: Namespace, _: &str) -> miette::Result<(Arc<NamedSource>, KdlDocument)> {
+    fn get_resource(&self, _: Namespace, _: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
         bail!("includes not supported in this context")
     }
 }
@@ -1130,7 +1136,7 @@ impl FsContext {
 }
 
 impl LoadContext for FsContext {
-    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource>, KdlDocument)> {
+    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
         let mut path = self.root.join(match ns {
             Namespace::Chip => "chips",
             Namespace::Board => "boards",
@@ -1466,8 +1472,8 @@ mod tests {
 
     #[derive(Default)]
     struct FakeContext {
-        boards: BTreeMap<String, (Arc<NamedSource>, KdlDocument)>,
-        chips: BTreeMap<String, (Arc<NamedSource>, KdlDocument)>,
+        boards: BTreeMap<String, (Arc<NamedSource<String>>, KdlDocument)>,
+        chips: BTreeMap<String, (Arc<NamedSource<String>>, KdlDocument)>,
     }
 
     impl FakeContext {
@@ -1485,7 +1491,7 @@ mod tests {
     }
 
     impl LoadContext for FakeContext {
-        fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource>, KdlDocument)> {
+        fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
             let map = match ns {
                 Namespace::Chip => &self.chips,
                 Namespace::Board => &self.boards,

@@ -58,7 +58,7 @@ pub fn load_interface_ctx(
 }
 
 pub fn parse_interface(
-    source: &Arc<NamedSource>,
+    source: &Arc<NamedSource<String>>,
     doc: &KdlDocument,
     ctx: &impl EvalCtx,
 ) -> miette::Result<InterfaceDef> {
@@ -74,7 +74,7 @@ fn parse_interface_internal(
     })?;
     if first.name().value() != "interface" {
         bail!(
-            labels=[LabeledSpan::at(*first.name().span(), "expected 'interface' here")],
+            labels=[LabeledSpan::at(first.name().span(), "expected 'interface' here")],
             "this may not be an interface, first node is not 'interface'"
         );
     }
@@ -130,13 +130,13 @@ fn parse_interface_body(
     for on_node in get_children_named(doc, "on-cfg")? {
         let cfg = on_node.entries().first().ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*on_node.name().span(), "on-cfg node missing string argument")],
+                labels = [LabeledSpan::at(on_node.name().span(), "on-cfg node missing string argument")],
                 "on-cfg requires a string argument (the cfg name)"
             )
         })?;
         let cfg = cfg.value().as_string().ok_or_else(|| {
             miette!(
-                labels = [LabeledSpan::at(*cfg.span(), "not a string")],
+                labels = [LabeledSpan::at(cfg.span(), "not a string")],
                 "on-cfg requires a string argument (the cfg name)"
             )
         })?;
@@ -150,20 +150,20 @@ fn parse_interface_body(
                         bail!(
                             labels = [
                                 LabeledSpan::at(es, "'else' previously found here"),
-                                LabeledSpan::at(*child.name().span(), "'is' node found here"),
+                                LabeledSpan::at(child.name().span(), "'is' node found here"),
                             ],
                             "'is' cannot follow 'else'"
                         );
                     }
                     let value = child.entries().first().ok_or_else(|| {
                         miette!(
-                            labels = [LabeledSpan::at(*child.name().span(), "'is' node missing string argument")],
+                            labels = [LabeledSpan::at(child.name().span(), "'is' node missing string argument")],
                             "'is' requires a string argument (the value to match)"
                         )
                     })?;
                     let value = value.value().as_string().ok_or_else(|| {
                         miette!(
-                            labels = [LabeledSpan::at(*value.span(), "not a string")],
+                            labels = [LabeledSpan::at(value.span(), "not a string")],
                             "'is' requires a string argument (the value to match)"
                         )
                     })?;
@@ -177,12 +177,12 @@ fn parse_interface_body(
                         bail!(
                             labels = [
                                 LabeledSpan::at(es, "'else' previously found here"),
-                                LabeledSpan::at(*child.name().span(), "...but also found here??"),
+                                LabeledSpan::at(child.name().span(), "...but also found here??"),
                             ],
                             "duplicate 'else' in 'on-cfg'"
                         );
                     }
-                    else_span = Some(*child.span());
+                    else_span = Some(child.span());
                     if !just_checking {
                         parse_interface_body(required_children(child)?, ctx, def)?;
                         just_checking = true;
@@ -190,7 +190,7 @@ fn parse_interface_body(
                 }
                 other => {
                     bail!(
-                        labels = [LabeledSpan::at(*child.name().span(), "not implemented")],
+                        labels = [LabeledSpan::at(child.name().span(), "not implemented")],
                         "on-cfg block contained unexpected operator \"{other}\""
                     );
                 }
@@ -213,16 +213,22 @@ fn parse_enum(
             // cool
         } else if node.entries().len() == 2 {
             let val = &node.entries()[1];
-            let Some(i) = val.value().as_i64() else {
+            let Some(i) = val.value().as_integer() else {
                 bail!(
-                    labels = [LabeledSpan::at(*val.span(), "not an integer")],
+                    labels = [LabeledSpan::at(val.span(), "not an integer")],
                     "enum value should be an integer"
                 )
+            };
+            let Ok(i) = i64::try_from(i) else {
+                bail!(
+                    labels = [LabeledSpan::at(val.span(), "out of range")],
+                    "enum value out of range for i64",
+                );
             };
             case.integer_value = Some(i);
         } else {
             bail!(
-                labels = [LabeledSpan::at(*node.entries()[2].span(), "unexpected")],
+                labels = [LabeledSpan::at(node.entries()[2].span(), "unexpected")],
                 "too many arguments for enum case"
             )
         }
@@ -245,13 +251,13 @@ fn parse_enum(
                             types.push(parse_value_type(s)?);
                         } else {
                             bail!(
-                                labels=[LabeledSpan::at(*e.span(), "not a string")],
+                                labels=[LabeledSpan::at(e.span(), "not a string")],
                                 "tuple field should have a string (type) argument"
                             );
                         }
                     } else {
                         bail!(
-                            labels=[LabeledSpan::at(*field.span(), "not one argument")],
+                            labels=[LabeledSpan::at(field.span(), "not one argument")],
                             "wrong number of arguments for field in tuple struct"
                         );
                     }
@@ -263,7 +269,7 @@ fn parse_enum(
                 for (name, node) in get_uniquely_named_children(children, "field")? {
                     if node.entries().len() != 2 {
                         bail!(
-                            labels=[LabeledSpan::at(*node.span(), "not two arguments")],
+                            labels=[LabeledSpan::at(node.span(), "not two arguments")],
                             "wrong number of arguments for field in named struct"
                         );
                     }
@@ -274,7 +280,7 @@ fn parse_enum(
                         });
                     } else {
                         bail!(
-                            labels=[LabeledSpan::at(*e_type.span(), "not a string")],
+                            labels=[LabeledSpan::at(e_type.span(), "not a string")],
                             "struct field should have a string (type) argument"
                         );
                     }
@@ -292,13 +298,13 @@ fn parse_enum(
         for e in derive_child.entries() {
             if e.name().is_some() {
                 bail!(
-                    labels=[LabeledSpan::at(*e.span(), "has a property name")],
+                    labels=[LabeledSpan::at(e.span(), "has a property name")],
                     "rust-derive arguments should be unnamed strings"
                 );
             }
             let Some(s) = e.value().as_string() else {
                 bail!(
-                    labels=[LabeledSpan::at(*e.span(), "not a string")],
+                    labels=[LabeledSpan::at(e.span(), "not a string")],
                     "rust-derive arguments should be unnamed strings"
                 );
             };
@@ -326,7 +332,7 @@ fn parse_struct(
     for (name, node) in get_uniquely_named_children(doc, "field")? {
         if node.entries().len() != 2 {
             bail!(
-                labels=[LabeledSpan::at(*node.span(), "not two arguments")],
+                labels=[LabeledSpan::at(node.span(), "not two arguments")],
                 "wrong number of arguments for field in named struct"
             );
         }
@@ -337,7 +343,7 @@ fn parse_struct(
             });
         } else {
             bail!(
-                labels=[LabeledSpan::at(*e_type.span(), "not a string")],
+                labels=[LabeledSpan::at(e_type.span(), "not a string")],
                 "struct field should have a string (type) argument"
             );
         }
@@ -347,13 +353,13 @@ fn parse_struct(
         for e in derive_child.entries() {
             if e.name().is_some() {
                 bail!(
-                    labels=[LabeledSpan::at(*e.span(), "has a property name")],
+                    labels=[LabeledSpan::at(e.span(), "has a property name")],
                     "rust-derive arguments should be unnamed strings"
                 );
             }
             let Some(s) = e.value().as_string() else {
                 bail!(
-                    labels=[LabeledSpan::at(*e.span(), "not a string")],
+                    labels=[LabeledSpan::at(e.span(), "not a string")],
                     "rust-derive arguments should be unnamed strings"
                 );
             };
@@ -422,7 +428,7 @@ fn parse_arg(node: &KdlNode) -> miette::Result<ArgDef> {
         no_children(node)?;
         let Some(typename) = e[1].value().as_string() else {
             bail!(
-                labels=[LabeledSpan::at(*e[1].span(), "not a string")],
+                labels=[LabeledSpan::at(e[1].span(), "not a string")],
                 "argument type should be a string"
             )
         };
@@ -431,7 +437,7 @@ fn parse_arg(node: &KdlNode) -> miette::Result<ArgDef> {
         })
     } else {
         bail!(
-            labels=[LabeledSpan::at(*node.span(), "wrong argument count")],
+            labels=[LabeledSpan::at(node.span(), "wrong argument count")],
             "arg should have two arguments, name and type"
         )
     }
@@ -443,7 +449,7 @@ fn parse_lease(node: &KdlNode) -> miette::Result<LeaseDef> {
     if e.len() == 2 && e[0].name().is_none() && e[1].name().is_none() {
         let Some(typename) = e[1].value().as_string() else {
             bail!(
-                labels=[LabeledSpan::at(*e[1].span(), "not a string")],
+                labels=[LabeledSpan::at(e[1].span(), "not a string")],
                 "argument type should be a string"
             )
         };
@@ -458,7 +464,7 @@ fn parse_lease(node: &KdlNode) -> miette::Result<LeaseDef> {
         })
     } else {
         bail!(
-            labels=[LabeledSpan::at(*node.span(), "wrong argument count")],
+            labels=[LabeledSpan::at(node.span(), "wrong argument count")],
             "arg should have two arguments, name and type"
         )
     }

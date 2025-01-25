@@ -74,7 +74,7 @@ method "set_pins_output" {
 }
 
 method "set_pin_high" {
-    doc "Sets a pin's output state to high. This won't have any immediate
+    doc "Sets a pin's output state to high. This won't have any immediate \
          effect unless the pin is in output mode."
 
     operation 1
@@ -84,7 +84,7 @@ method "set_pin_high" {
 }
 
 method "set_pin_low" {
-    doc "Sets a pin's output state to low. This won't have any immediate
+    doc "Sets a pin's output state to low. This won't have any immediate \
          effect unless the pin is in output mode."
 
     operation 2
@@ -94,7 +94,7 @@ method "set_pin_low" {
 }
 
 method "toggle_pin" {
-    doc "Inverts a pin's output state. This won't have any immediate effect
+    doc "Inverts a pin's output state. This won't have any immediate effect \
          unless the pin is in output mode."
 
     operation 3
@@ -104,7 +104,7 @@ method "toggle_pin" {
 }
 
 method "set_pin_alternate_mode" {
-    doc "Configures a pin into Alternate mode, selecting a specific alternate
+    doc "Configures a pin into Alternate mode, selecting a specific alternate \
          function index."
 
     operation 4
@@ -124,7 +124,7 @@ method "set_pin_input" {
 }
 
 method "set_pin_analog" {
-    doc "Configures a pin into Analog mode, putting it in a high impedance
+    doc "Configures a pin into Analog mode, putting it in a high impedance \
             state."
 
     operation 11
