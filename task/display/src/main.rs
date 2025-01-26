@@ -5,7 +5,7 @@
 #![no_std]
 #![no_main]
 
-use drv_stm32g0_sys_api::{PeripheralName, Port, Stm32G0Sys as Sys};
+use drv_stm32xx_sys_api::{PeripheralName, Port, Stm32Sys as Sys};
 use hubris_task_slots::SLOTS;
 
 #[export_name = "main"]

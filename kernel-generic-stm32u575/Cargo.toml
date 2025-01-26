@@ -5,6 +5,8 @@ edition = "2021"
 
 [features]
 clock-160mhz-hsi16 = []
+clock-hsi48-on = []
+pwr-vddusb-valid = []
 
 # Rather specialized kernel profiling via fixed GPIOs.
 # Probably of limited usefulness in general.

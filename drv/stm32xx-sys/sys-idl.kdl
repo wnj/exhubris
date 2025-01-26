@@ -1,162 +1,172 @@
 // STM32 core driver IPC interface for STM32L4.
 
-interface "stm32-sys"
+interface stm32-sys
 
 // Common types for talking about pins:
 
-enum "Port" {
+enum Port {
     doc "A GPIO port name."
 
-    case "A"
-    case "B"
-    case "C"
-    case "D"
+    case A
+    case B
+    case C
+    case D
     // E not implemented by any supported parts yet
-    case "F"
+    case F
     // G not implemented by any supported parts yet
-    case "H"
+    case H
     // I and later not implemented by any supported parts yet
 
-    rust-derive "Copy" "Clone" "Debug"
+    rust-derive Copy Clone Debug
 }
 
-enum "Function" {
+enum Function {
     doc "An alternate function index for a pin."
 
-    case "AF0"
-    case "AF1"
-    case "AF2"
-    case "AF3"
-    case "AF4"
-    case "AF5"
-    case "AF6"
-    case "AF7"
+    case AF0
+    case AF1
+    case AF2
+    case AF3
+    case AF4
+    case AF5
+    case AF6
+    case AF7
 
-    case "AF8"
-    case "AF9"
-    case "AF10"
-    case "AF11"
-    case "AF12"
-    case "AF13"
-    case "AF14"
-    case "AF15"
+    case AF8
+    case AF9
+    case AF10
+    case AF11
+    case AF12
+    case AF13
+    case AF14
+    case AF15
 
-    rust-derive "Copy" "Clone" "Debug"
+    rust-derive Copy Clone Debug
 }
 
-enum "Pull" {
+enum Pull {
     doc "Possible settings for pin pull resistors."
 
-    case "Up"
-    case "Down"
+    case Up
+    case Down
 
-    rust-derive "Copy" "Clone" "Debug"
+    rust-derive Copy Clone Debug
 }
 
 // Operations:
 
-method "set_pin_output" {
+method set_pin_output {
     doc "Configures a pin into output mode."
 
     operation 0
-    arg "port" "Port"
-    arg "pin" "u8"
+    arg port Port
+    arg pin u8
     auto-retry
 }
 
-method "set_pins_output" {
+method set_pins_output {
     doc "Configures a pin into output mode."
 
     operation 9
-    arg "port" "Port"
-    arg "mask" "u16"
+    arg port Port
+    arg mask u16
     auto-retry
 }
 
-method "set_pin_high" {
-    doc "Sets a pin's output state to high. This won't have any immediate
+method set_pin_high {
+    doc "Sets a pin's output state to high. This won't have any immediate \
          effect unless the pin is in output mode."
 
     operation 1
-    arg "port" "Port"
-    arg "pin" "u8"
+    arg port Port
+    arg pin u8
     auto-retry
 }
 
-method "set_pin_low" {
-    doc "Sets a pin's output state to low. This won't have any immediate
+method set_pin_low {
+    doc "Sets a pin's output state to low. This won't have any immediate \
          effect unless the pin is in output mode."
 
     operation 2
-    arg "port" "Port"
-    arg "pin" "u8"
+    arg port Port
+    arg pin u8
     auto-retry
 }
 
-method "toggle_pin" {
-    doc "Inverts a pin's output state. This won't have any immediate effect
+method toggle_pin {
+    doc "Inverts a pin's output state. This won't have any immediate effect \
          unless the pin is in output mode."
 
     operation 3
-    arg "port" "Port"
-    arg "pin" "u8"
+    arg port Port
+    arg pin u8
     auto-retry
 }
 
-method "set_pin_alternate_mode" {
-    doc "Configures a pin into Alternate mode, selecting a specific alternate
+method set_pin_alternate_mode {
+    doc "Configures a pin into Alternate mode, selecting a specific alternate \
          function index."
 
     operation 4
-    arg "port" "Port"
-    arg "pin" "u8"
-    arg "function" "Function"
+    arg port Port
+    arg pin u8
+    arg function Function
     auto-retry
 }
 
-method "set_pin_input" {
+method set_pin_input {
     doc "Configures a pin into input mode."
 
     operation 6
-    arg "port" "Port"
-    arg "pin" "u8"
+    arg port Port
+    arg pin u8
     auto-retry
 }
 
-method "is_pin_high" {
+method set_pin_analog {
+    doc "Configures a pin into Analog mode, putting it in a high impedance \
+            state."
+
+    operation 11
+    arg port Port
+    arg pin u8
+    auto-retry
+}
+
+method is_pin_high {
     doc "Senses the current level of a pin."
 
     operation 7
-    arg "port" "Port"
-    arg "pin" "u8"
-    result "bool"
+    arg port Port
+    arg pin u8
+    result bool
     auto-retry
 }
 
-method "read_pins" {
+method read_pins {
     doc "Senses the current level of pins on a port."
 
     operation 10
-    arg "port" "Port"
-    result "u16"
+    arg port Port
+    result u16
     auto-retry
 }
 
-method "set_pin_pull" {
+method set_pin_pull {
     doc "Configures pull resistors on a pin."
 
     operation 8
-    arg "port" "Port"
-    arg "pin" "u8"
-    arg "pull" "Option<Pull>"
+    arg port Port
+    arg pin u8
+    arg pull Option<Pull>
     auto-retry
 }
 
-method "enable_clock" {
+method enable_clock {
     doc "Enables the clock signal to a peripheral."
 
     operation 5
-    arg "peripheral" "PeripheralName"
+    arg peripheral PeripheralName
     auto-retry
 }
 
@@ -164,23 +174,24 @@ on-cfg "hubris_chip" {
     is "STM32G030" {
         enum "PeripheralName" {
             doc "An enumeration of all RCC-controlled peripherals on the chip."
-        
-            case "Usart2" 0b10_10001
-        
+
+            case Usart2 0b10_10001 // APB1ENR1 bit 17 
+            case Tim17  0b11_10010 // APB1ENR2 bit 18
+
             rust-derive "Copy" "Clone" "Debug"
         }
     }
-    is "STM32G031" {
-        enum "PeripheralName" {
+    is STM32G031 {
+        enum PeripheralName {
             doc "An enumeration of all RCC-controlled peripherals on the chip."
-        
-            case "Usart2" 0b10_10001
-        
-            rust-derive "Copy" "Clone" "Debug"
+
+            case Usart2 0b10_10001
+
+            rust-derive Copy Clone Debug
         }
     }
-    is "STM32L412" {
-        enum "PeripheralName" {
+    is STM32L412 {
+        enum PeripheralName {
             doc "An enumeration of all RCC-controlled peripherals on the chip."
 
             // Bitwise value is:
@@ -193,15 +204,15 @@ on-cfg "hubris_chip" {
             //  100 APB1ENR2
             //  101 APB2ENR
 
-            case "Tim2" 0b011_00000 // APB1ENR1 bit 0
-            case "Crs" 0b011_11000 // APB1ENR1 bit 24
-            case "UsbFs" 0b011_11010 // APB1ENR1 bit 26
+            case Tim2 0b011_00000 // APB1ENR1 bit 0
+            case Crs 0b011_11000 // APB1ENR1 bit 24
+            case UsbFs 0b011_11010 // APB1ENR1 bit 26
 
-            rust-derive "Copy" "Clone" "Debug"
+            rust-derive Copy Clone Debug
         }
     }
-    is "STM32U575" {
-        enum "PeripheralName" {
+    is STM32U575 {
+        enum PeripheralName {
             doc "An enumeration of all RCC-controlled peripherals on the chip."
 
             // Bitwise value is:
@@ -216,7 +227,10 @@ on-cfg "hubris_chip" {
             //  110 APB2ENR
             //  111 APB3ENR
 
-            rust-derive "Copy" "Clone" "Debug"
+            case UsbOtg 0b001_01110
+            case Crs 0b100_11000
+
+            rust-derive Copy Clone Debug
         }
     }
 }

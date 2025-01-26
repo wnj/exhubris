@@ -2,7 +2,7 @@
 #![no_main]
 
 use stm32_metapac as pac;
-use stm32_metapac::{pwr::vals::Vos, rcc::vals::{Plldiv, Pllm, Pllmboost, Plln, Pllrge, Pllsrc, Sw}};
+use stm32_metapac::{pwr::vals::Vos, rcc::vals::{Iclksel, Plldiv, Pllm, Pllmboost, Plln, Pllrge, Pllsrc, Sw}};
 use cortex_m_rt::entry;
 
 fn clock_setup() -> u32 {
@@ -113,6 +113,26 @@ fn clock_setup() -> u32 {
 #[entry]
 fn main() -> ! {
     let cycles_per_ms = clock_setup();
+
+    if cfg!(feature = "clock-hsi48-on") {
+        // Turn on HSI48.
+        pac::RCC.cr().modify(|w| {
+            w.set_hsi48on(true);
+        });
+        while !pac::RCC.cr().read().hsi48rdy() {
+            // spin
+        }
+        // Use HSI48 as the 48MHz reference source.
+        pac::RCC.ccipr1().modify(|w| w.set_iclksel(Iclksel::HSI48));
+    }
+
+    if cfg!(feature = "pwr-vddusb-valid") {
+        // Enable clock to the PWR unit so we can talk to it.
+        pac::RCC.ahb3enr().modify(|w| w.set_pwren(true));
+        cortex_m::asm::dsb();
+        // Tell PWR that we expect VDDUSB to be available and valid.
+        pac::PWR.svmcr().modify(|w| w.set_usv(true));
+    }
 
     unsafe { hubris_kern::startup::start_kernel(cycles_per_ms) }
 }

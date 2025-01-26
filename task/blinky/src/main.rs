@@ -1,12 +1,12 @@
 //! A task that blinks a LED at PC13.
 //!
-//! This task exists to test the build system. 
+//! This task exists to test the build system.
 
 #![no_std]
 #![no_main]
 
+use drv_stm32xx_sys_api::{Port, Stm32Sys as Sys};
 use hubris_task_slots::SLOTS;
-use drv_stm32g0_sys_api::{Stm32G0Sys as Sys, Port};
 
 #[export_name = "main"]
 fn main() -> ! {
@@ -35,5 +35,5 @@ fn main() -> ! {
         }
 
         sys.toggle_pin(Port::C, 15);
-    } 
+    }
 }

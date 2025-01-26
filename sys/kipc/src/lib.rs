@@ -3,7 +3,7 @@
 
 #![no_std]
 
-use core::num::NonZeroUsize;
+use core::{num::NonZeroUsize, sync::atomic::Ordering};
 
 use hubris_abi::Kipcnum;
 pub use hubris_abi::TaskState;
@@ -67,3 +67,13 @@ pub enum NewState {
     Halted = 0,
     Runnable = 1,
 }
+
+pub fn reset() -> ! {
+    userlib::sys_send_to_kernel(Kipcnum::Reset as u16, &[], &mut [], &mut []);
+    // The kernel does not return from this, but we currently have no way of
+    // indicating that, so...
+    loop {
+        core::sync::atomic::compiler_fence(Ordering::SeqCst);
+    }
+}
+

@@ -113,6 +113,14 @@ impl Stm32Sys for Server {
         Ok(())
     }
 
+    fn set_pin_analog(&mut self, _: Meta, port: Port, pin: u8) -> Result<(), ReplyFaultReason> {
+        let pin = convert_pin(pin);
+        let gpio = get_port(port)?;
+        gpio.moder().modify(|v| v.set_moder(pin, Moder::ANALOG));
+
+        Ok(())
+    }
+
     fn set_pin_input(&mut self, _: Meta, port: Port, pin: u8) -> Result<(), ReplyFaultReason> {
         let gpio = get_port(port)?;
         gpio.moder()
@@ -176,7 +184,7 @@ impl Stm32Sys for Server {
                     2 => rcc.apbenr1().modify(|r| r.0 |= 1 << bit_no),
                     _ => rcc.apbenr2().modify(|r| r.0 |= 1 << bit_no),
                 }
-           } else if #[cfg(hubris_chip = "STM32G031")] {
+            } else if #[cfg(hubris_chip = "STM32G031")] {
                 match reg_no {
                     0 => rcc.gpioenr().modify(|r| r.0 |= 1 << bit_no),
                     1 => rcc.ahbenr().modify(|r| r.0 |= 1 << bit_no),

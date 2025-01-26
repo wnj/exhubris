@@ -213,7 +213,7 @@
 //! - Probably other things.
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
-use miette::{bail, IntoDiagnostic as _, LabeledSpan};
+use miette::{bail, IntoDiagnostic as _, LabeledSpan, SourceSpan};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -264,7 +264,7 @@ pub fn parse_doc(doc: &KdlDocument) -> miette::Result<Value> {
     {
         bail!(
             labels=[LabeledSpan::at(
-                *surprise.name().span(),
+                surprise.name().span(),
                 "this looks like an array element",
             )],
             help="to use a literal - as an object property, quote it: \"-\"",
@@ -311,8 +311,8 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
         if let Some(first) = node.entries().first() {
             bail!(
                 labels = [
-                    LabeledSpan::at(*first.span(), "argument"),
-                    LabeledSpan::at(*children.span(), "children"),
+                    LabeledSpan::at(first.span(), "argument"),
+                    LabeledSpan::at(children.span(), "children"),
                 ],
                 "node may have children ({{...}}) or arguments but not both"
             )
@@ -325,8 +325,8 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
                     {
                         bail!(
                             labels = [
-                                LabeledSpan::at(*t.span(), "asserted to be an array"),
-                                LabeledSpan::at(*bad.span(), "not an array element"),
+                                LabeledSpan::at(t.span(), "asserted to be an array"),
+                                LabeledSpan::at(bad.span(), "not an array element"),
                             ],
                             "ambiguous explicit array"
                         )
@@ -339,8 +339,8 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
                     {
                         bail!(
                             labels = [
-                                LabeledSpan::at(*t.span(), "asserted to be an object"),
-                                LabeledSpan::at(*bad.span(), "looks like an array element"),
+                                LabeledSpan::at(t.span(), "asserted to be an object"),
+                                LabeledSpan::at(bad.span(), "looks like an array element"),
                             ],
                             help = "to use a literal - as an object key, \
                                         quote it: \"-\"",
@@ -351,7 +351,7 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
                 }
                 _ => {
                     bail!(
-                        labels=[LabeledSpan::at(*t.span(), "not recognized")],
+                        labels=[LabeledSpan::at(t.span(), "not recognized")],
                         help = "did you mean (array) or (object)?",
                         "unexpected type annotation"
                     )
@@ -363,8 +363,8 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
     } else if node.entries().iter().all(|e| e.name().is_some()) {
         // inline map
         let m: Map<_, _> = node.entries().iter().map(|e| {
-            (e.name().unwrap().value().to_string(), convert_value(e.value()))
-        }).collect();
+            Ok((e.name().unwrap().value().to_string(), convert_value(e.value(), e.span())?))
+        }).collect::<miette::Result<_>>()?;
         Ok(m.into())
     } else if let Some(surprise) = node.entries().iter()
         .find(|n| n.name().is_some())
@@ -374,8 +374,8 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
         let other = node.entries().iter().find(|n| n.name().is_none()).unwrap();
         bail!(
             labels = [
-                LabeledSpan::at(*surprise.span(), "this has a property name"),
-                LabeledSpan::at(*other.span(), "this does not"),
+                LabeledSpan::at(surprise.span(), "this has a property name"),
+                LabeledSpan::at(other.span(), "this does not"),
             ],
             help = "either give all arguments property names (map) or \
                     remove them all (array)",
@@ -384,25 +384,35 @@ pub fn parse_node_contents(node: &KdlNode) -> miette::Result<Value> {
     } else if node.entries().len() > 1 {
         // inline array
         let v: Vec<_> = node.entries().iter()
-            .map(|e| convert_value(e.value()))
-            .collect();
+            .map(|e| convert_value(e.value(), e.span()))
+            .collect::<miette::Result<_>>()?;
         Ok(v.into())
     } else {
         // single value
-        Ok(convert_value(node.entries()[0].value()))
+        convert_value(node.entries()[0].value(), node.entries()[0].span())
     }
 }
 
-fn convert_value(value: &KdlValue) -> Value {
+fn convert_value(value: &KdlValue, span: SourceSpan) -> miette::Result<Value> {
     match value.clone() {
-        KdlValue::RawString(s) | KdlValue::String(s) => s.into(),
+        KdlValue::String(s) => Ok(s.into()),
 
-        KdlValue::Base2(i) | KdlValue::Base8(i) | KdlValue::Base10(i)
-            | KdlValue::Base16(i) => i.into(),
+        KdlValue::Integer(i) => {
+            if let Ok(unsigned) = u64::try_from(i) {
+                Ok(unsigned.into())
+            } else if let Ok(signed) = i64::try_from(i) {
+                Ok(signed.into())
+            } else {
+                bail!(
+                    labels = [LabeledSpan::at(span, "value out of range")],
+                    "integer must fit in u64/i64"
+                )
+            }
+        }
 
-        KdlValue::Base10Float(f) => f.into(),
-        KdlValue::Bool(b) => b.into(),
-        KdlValue::Null => Value::Null,
+        KdlValue::Float(f) => Ok(f.into()),
+        KdlValue::Bool(b) => Ok(b.into()),
+        KdlValue::Null => Ok(Value::Null),
     }
 }
 
