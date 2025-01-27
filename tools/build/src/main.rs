@@ -1,11 +1,10 @@
 use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, path::{Path, PathBuf}, sync::Arc, time::Instant};
 
 use clap::Parser;
-use comfy_table::CellAlignment;
 use miette::{miette, Context, IntoDiagnostic as _, LabeledSpan, NamedSource};
 use rangemap::RangeMap;
 use size::Size;
-use hubris_build::{alloc::allocate_space, appcfg, buildid::BuildId, cargo::{do_cargo_build, LinkStyle}, get_target_spec, relink::{relink_final, relink_for_size}, verbose::{banner, simple_table}};
+use hubris_build::{alloc::allocate_space, appcfg, buildid::BuildId, cargo::{do_cargo_build, LinkStyle}, get_target_spec, relink::{relink_final, relink_for_size}, verbose::{banner, print_allocations, simple_table}};
 use hubris_region_alloc::{Mem, TaskInfo, TaskName};
 use hubris_build_kconfig as kconfig;
 
@@ -192,65 +191,7 @@ fn main() -> miette::Result<()> {
             buildid.hash(&allocs);
 
             println!("Allocations ({alloc_time:?}):");
-
-            let mut table = comfy_table::Table::new();
-            table.load_preset(comfy_table::presets::NOTHING);
-            table.set_header(["MEMORY", "TASK", "START", "END", "SIZE", "LOST"]);
-            table.column_mut(2).unwrap().set_cell_alignment(CellAlignment::Right);
-            table.column_mut(3).unwrap().set_cell_alignment(CellAlignment::Right);
-            table.column_mut(4).unwrap().set_cell_alignment(CellAlignment::Right);
-            table.column_mut(5).unwrap().set_cell_alignment(CellAlignment::Right);
-            for (region_name, regallocs) in allocs.by_region() {
-                let mut regallocs = regallocs.iter().collect::<Vec<_>>();
-                regallocs.sort_by_key(|(_name, ta)| ta.base);
-                let mut total = 0;
-                let mut loss = 0;
-
-                let mut last = None;
-                for (task_name, talloc) in regallocs {
-                    let base = talloc.base;
-                    let req_size = talloc.requested;
-
-                    if let Some(last) = last {
-                        if base != last {
-                            let pad_size = base - last;
-                            total += pad_size;
-                            loss += pad_size;
-                            table.add_row([
-                                region_name.to_string(),
-                                "-pad-".to_string(),
-                                format!("{:#x}", last),
-                                format!("{:#x}", base - 1),
-                                Size::from_bytes(pad_size).to_string(),
-                                Size::from_bytes(pad_size).to_string(),
-                            ]);
-                        }
-                    }
-                    let size = talloc.sizes.iter().sum::<u64>();
-                    let internal_pad = size - req_size;
-                    table.add_row([
-                        region_name.to_string(),
-                        task_name.to_string(),
-                        format!("{:#x}", base),
-                        format!("{:#x}", base + size - 1),
-                        Size::from_bytes(size).to_string(),
-                        Size::from_bytes(internal_pad).to_string(),
-                    ]);
-                    total += size;
-                    loss += internal_pad;
-
-                    last = Some(base + size);
-                }
-                table.add_row([
-                    region_name.to_string(),
-                    "(total)".to_string(),
-                    String::new(),
-                    String::new(),
-                    Size::from_bytes(total).to_string(),
-                    Size::from_bytes(loss).to_string(),
-                ]);
-            }
-            println!("{table}");
+            print_allocations(&allocs);
             
             let dir3 = workdir.join("final");
             match std::fs::remove_dir_all(&dir3) {
