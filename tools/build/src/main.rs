@@ -61,6 +61,8 @@ fn main() -> miette::Result<()> {
     let args = Tool::parse();
 
     match args.cmd {
+
+        // The Build Command
         Cmd::Build { cfg_path, cargo_verbose, out } => {
             // Canonicalize directories and locate/parse input files.
             let root = std::env::var("HUBRIS_PROJECT_ROOT").into_diagnostic()?;
@@ -312,6 +314,8 @@ fn main() -> miette::Result<()> {
 
             Ok(())
         }
+
+        // The PackHex Command
         Cmd::PackHex { bindir, outpath, gdbconfig } => {
             let mut overall_segments = RangeMap::new();
             let mut protohex = vec![];
@@ -417,6 +421,8 @@ fn main() -> miette::Result<()> {
 
             Ok(())
         }
+
+        // The CheckIdl Command
         Cmd::CheckIdl { path } => {
             let interface = hubris_build::idl::load_interface(path)?;
             println!();
@@ -439,6 +445,8 @@ fn main() -> miette::Result<()> {
             }
             Ok(())
         }
+
+        // The Bundle Command
         Cmd::Bundle { cfg_path, bindir, outpath } => {
             // Canonicalize directories and locate/parse input files.
             let root = std::env::var("HUBRIS_PROJECT_ROOT").into_diagnostic()?;
