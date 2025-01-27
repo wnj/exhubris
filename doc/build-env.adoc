@@ -29,9 +29,8 @@ build. The strategy:
   depend on and expect reliable results (this document).
 
 - Strip out conflicting variables from the environment when executing build
-  tasks.
-
-(As of this writing, the stripping portion is not complete.)
+  tasks. (Concretely, any environment variables starting with `HUBRIS_` will be
+  replaced or removed.)
 
 === Depending on a variable
 

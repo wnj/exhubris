@@ -1,4 +1,4 @@
-use std::{collections::{btree_map, BTreeMap, BTreeSet}, fs, io::{ErrorKind, Write as _}, ops::Range, path::{Path, PathBuf}, process::Command, sync::Arc, time::Instant};
+use std::{collections::{btree_map, BTreeMap, BTreeSet}, ffi::OsStr, fs, io::{ErrorKind, Write as _}, ops::Range, path::{Path, PathBuf}, process::Command, sync::Arc, time::Instant};
 
 use clap::Parser;
 use comfy_table::CellAlignment;
@@ -643,6 +643,27 @@ enum LinkStyle {
     Full,
 }
 
+/// Creates a `Command` to run `command`, but with environment conflicts
+/// removed.
+///
+/// This will prevent the resulting `Command` from inheriting any environment
+/// variables starting with `HUBRIS_`, except for those explicitly set after
+/// this returns.
+///
+/// This is intended to help avoid confusing state leaks from the user's shell
+/// environment into builds.
+fn cmd_with_clean_env(command: impl AsRef<OsStr>) -> Command {
+    let mut cmd = Command::new(command);
+
+    for (name, _value) in std::env::vars() {
+        if name.starts_with("HUBRIS_") {
+            cmd.env_remove(name);
+        }
+    }
+
+    cmd
+}
+
 #[allow(clippy::too_many_arguments)]
 fn do_cargo_build(
     linker_script_text: &str,
@@ -673,7 +694,7 @@ fn do_cargo_build(
     }
     simple_table(rows);
     
-    let mut cmd = Command::new("cargo");
+    let mut cmd = cmd_with_clean_env("cargo");
 
     if let Some(tc) = &plan.toolchain_override {
         cmd.arg(format!("+{tc}"));
@@ -861,7 +882,7 @@ fn relink(
     writeln!(scr, "}} INSERT AFTER .uninit").into_diagnostic()?;
     drop(scr);
 
-    let mut ldcmd = Command::new(&env.linker_path);
+    let mut ldcmd = cmd_with_clean_env(&env.linker_path);
     ldcmd.arg(inpath);
     ldcmd.arg("-o").arg(outpath);
     ldcmd.arg(format!("-T{}", linker_script.display()));
