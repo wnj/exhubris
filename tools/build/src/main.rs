@@ -32,19 +32,29 @@ enum Cmd {
         #[clap(short, long)]
         out: Option<PathBuf>,
     },
+    /// Assembles a .hex and (optionally) gdbconfig from build products.
     PackHex {
+        /// Final output directory (e.g. .work/appnamehere/final)
         bindir: PathBuf,
+        /// Filename for .hex file.
         outpath: PathBuf,
 
+        /// If provided, requests a gdbconfig be generated at the given path.
         #[clap(short, long)]
         gdbconfig: Option<PathBuf>,
     },
+    /// Reads and performs basic checks on an IDL file.
     CheckIdl {
         path: PathBuf,
     },
+    /// Produces an output bundle from raw files on disk, which can be useful if
+    /// you're modifying the bundle somehow.
     Bundle {
+        /// Path to the appcfg, which should correspond to the output files.
         cfg_path: PathBuf,
+        /// Final output directory (e.g. .work/appnamehere/final)
         bindir: PathBuf,
+        /// Output path for constructed bundle.
         outpath: PathBuf,
     },
 }
