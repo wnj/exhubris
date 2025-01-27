@@ -1,0 +1,155 @@
+:toc:
+:toc-placement!:
+
+= Build Script Environment
+
+This specifies the information passed into task and kernel builds, for use by
+build scripts.
+
+toc::[]
+
+== Basics
+
+Cargo supports a notion of "features," but treats them as purely additive
+boolean flags. This means it has no way to describe a feature with a numeric
+value, mutually exclusive features, or arbitrary structured configuration data.
+Because all of these things are quite common in embedded development, we had to
+add an alternative.
+
+The build system passes metadata to task and kernel builds through environment
+variables. This is not quite as much of a hack as it might sound; Cargo actually
+has support for declaring dependencies on the content of environment variables,
+so we still get reliable incremental builds.
+
+Because we like determinism, but environment variables are a great source of
+hidden state, we want to avoid leaking bits of the user's environment into the
+build. The strategy:
+
+- Define the set of environment variables that a Hubris task or kernel can
+  depend on and expect reliable results (this document).
+
+- Strip out conflicting variables from the environment when executing build
+  tasks.
+
+(As of this writing, the stripping portion is not complete.)
+
+=== Depending on a variable
+
+The easiest way to use the contents of these variables is through the
+`hubris-build-util` crate, which provides accessor functions that automatically
+emit the proper Cargo directives.
+
+If you choose to do it by hand in a build script, remember that if the results
+of your build depend on the contents of some environment variable called `XXX`,
+your build script _must_ emit a directive to stdout of the form:
+
+----
+cargo::rerun-if-env-changed=XXX
+----
+
+This will cause Cargo to record the current contents of the environment variable
+in your crate's dependency information, ensuring that your crate will be rebuilt
+if the contents change.
+
+
+=== Encoding
+
+Currently there are three different encodings in use (JSON, RON, and plain
+text). This is for historical reasons and could be improved.
+
+== Variables available to tasks
+
+=== `HUBRIS_CHIP_COMPAT`
+
+Contains a comma-separated list of the `compatible` strings provided by the
+chipdef, in order from most specific to least, with no whitespace added.
+
+Note that the `compatible` strings are also passed to the compiler as
+`cfg(hubris_chip="...")`, which is generally a more convenient way to make code
+conditional on chip models.
+
+=== `HUBRIS_NOTIFICATIONS`
+
+Contains a RON-encoded list of strings giving the notification bit names for the
+current task, ordered from bit 0 counting up.
+
+=== `HUBRIS_TASKS`
+
+NOTE: for most purposes it's better to use the `HUBRIS_TASK_INFO_xxx` variables.
+
+Contains a comma-separated list of task names, in index order, with no added
+whitespace. This is used to, among other things, generate the task count and
+name enumeration in the `hubris_num_tasks` crate.
+
+In general, the `HUBRIS_TASK_INFO_xxx` variables are a more powerful and
+easier-to-extend alternative. However, if you need to indicate a dependency on
+the _complete set_ of tasks declared, such that code will be rebuilt if tasks
+are reordered, renamed, added, or removed, then `HUBRIS_TASKS` is the right
+thing to use.
+
+=== `HUBRIS_TASK_CONFIG`
+
+Contains a JSON-encoded representation of the task's `config` stanza from the
+appdef.
+
+=== `HUBRIS_TASK_INFO_xxx`
+
+Each variable `HUBRIS_TASK_INFO_xxx` contains information on the task named
+`xxx`, encoded as a JSON object. The following keys are currently defined; more
+may be added at any time.
+
+- `index` (integer): index of this task in the application.
+- `notifications` (list of string): this task's notification bit names, starting
+  from bit 0.
+
+This is preferred over the older `HUBRIS_TASKS` variable because it's easier to
+extend, and allows for more granular build dependencies: a task can indicate a
+build-time dependency on the index or notifications of some task `foo` _only,_
+whereas depending on `HUBRIS_TASKS` means any change to task naming or order
+forces a rebuild.
+
+If you want to rebuild if a task is added (or renamed), use the `HUBRIS_TASKS`
+variable.
+
+=== `HUBRIS_TASK_SLOTS`
+
+Contains a JSON-encoded object. The keys are the names of task slots defined in
+the current task. The values are the indices of the bound tasks.
+
+== Variables available to kernels
+
+=== `HUBRIS_IMAGE_ID`
+
+Contains a decimal 64-bit integer generated from an unspecified hash over some
+of the build inputs.
+
+This is intended to serve only one purpose: making it easier for Humility to
+detect that an image has not already been flashed, without necessarily having to
+read all of flash. The Hubris kernel deposits the contents of this integer (in
+binary form) in a symbol called `HUBRIS_IMAGE_ID`.
+
+This ID _is not_ guaranteed to change if the build inputs change. It should not
+be relied upon to distinguish builds from one another.
+
+=== `HUBRIS_KCONFIG`
+
+Contains a RON-encoded structure conveying information about the tasks and
+memory layout of the current application. This is consumed by the kernel build
+script to generate tables.
+
+The `build-kconfig` crate in upstream Hubris is the authoritative definition of
+the schema.
+
+
+== Variables used by Cargo
+
+=== `CARGO_ENCODED_RUSTFLAGS`
+
+The `RUSTFLAGS` environment variable can't handle the syntax of fancier compiler
+flags like `--check-cfg`. The `CARGO_ENCODED_RUSTFLAGS` variable is a hack to
+avoid this. Cargo processes the contents of this variable and expands it into
+compiler flags. Hopefully the actual `RUSTFLAGS` will eventually be fixed to
+support the full breadth of syntax options.
+
+The build system uses `CARGO_ENCODED_RUSTFLAGS` to submit the combination of
+app-level and component-level build configuration to Cargo.
