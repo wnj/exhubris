@@ -56,6 +56,17 @@ if the contents change.
 Currently there are three different encodings in use (JSON, RON, and plain
 text). This is for historical reasons and could be improved.
 
+== Variables available everywhere
+
+=== `HUBRIS_PROJECT_ROOT`
+
+Contains the path of the current "project root," the directory containing the
+`hubris-env.toml` file.
+
+This variable is set by `hubake` and is passed through the build system
+unmodified.
+
+
 == Variables available to tasks
 
 === `HUBRIS_CHIP_COMPAT`

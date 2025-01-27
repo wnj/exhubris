@@ -186,7 +186,7 @@ pub fn get_target_spec(triple: &str) -> Option<TargetSpec> {
 ///
 /// This will prevent the resulting `Command` from inheriting any environment
 /// variables starting with `HUBRIS_`, except for those explicitly set after
-/// this returns.
+/// this returns, and `HUBRIS_PROJECT_ROOT`.
 ///
 /// This is intended to help avoid confusing state leaks from the user's shell
 /// environment into builds.
@@ -194,6 +194,9 @@ pub fn cmd_with_clean_env(command: impl AsRef<OsStr>) -> Command {
     let mut cmd = Command::new(command);
 
     for (name, _value) in std::env::vars() {
+        if name == "HUBRIS_PROJECT_ROOT" {
+            continue;
+        }
         if name.starts_with("HUBRIS_") {
             cmd.env_remove(name);
         }
@@ -201,5 +204,3 @@ pub fn cmd_with_clean_env(command: impl AsRef<OsStr>) -> Command {
 
     cmd
 }
-
-
