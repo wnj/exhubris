@@ -7,6 +7,7 @@ pub mod buildid;
 pub mod relink;
 pub mod cargo;
 pub mod verbose;
+pub mod kconfig;
 
 use std::{ffi::OsStr, path::PathBuf, process::Command};
 
