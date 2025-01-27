@@ -1,0 +1,216 @@
+:toc:
+:toc-placement!:
+
+= App Definition Format
+
+An app definition file, or "appdef," defines the contents of a firmware image.
+
+toc::[]
+
+== Basics
+
+Appdefs are written in https://kdl.dev/[KDL2].
+
+To distinguish an appdef from other KDL files, we require the first non-comment
+non-whitespace node in the file to be `app`.
+
+Here is a simple example.
+
+----
+app simple-example
+
+board my-awesome-pcb {
+    chip stm32f407vg
+}
+
+kernel {
+    workspace-crate my-kernel
+    stack-size 1000
+}
+
+task idle {
+    workspace-crate task-idle
+    stack-size 128
+}
+----
+
+== `app` (required)
+
+`app NAME`
+
+- `NAME` is the name of this firmware image, and determines (among other things)
+  the output filename for a build.
+
+== `board` (required)
+
+----
+board NAME {
+    chip CHIPNAME
+}
+----
+
+Defines the board being targeted by this image. This section is very minimal and
+will be extended/replaced later. Currently this only gives the board a `NAME`
+and references the chipdef.
+
+Attributes:
+
+- `chip CHIPNAME`: references a chipdef by name
+
+== `kernel` (required)
+
+----
+kernel {
+    stack-size BYTES
+    // optional attributes and children go here
+}
+----
+
+Specifies how to build the kernel.
+
+Attributes:
+
+- `stack-size BYTES` gives the kernel's stack size in bytes.
+- `features NAME...` (optional) adds its arguments as Cargo features to the
+  kernel's build configuration.
+- `no-default-features` (optional) switches off the kernel crate's default Cargo
+  features.
+- `target TRIPLE` (optional) overrides the target triple used to build the
+  kernel.
+- `toolchain NAME` (optional) overrides the toolchain version used to build the
+  kernel. Note that dotted version numbers need to be quoted: `"1.85"`
+
+=== `kernel > workspace-crate`
+
+See <<workspace-crate>>.
+
+=== `kernel > git-crate`
+
+See <<git-crate>>.
+
+== `task`
+
+----
+task NAME {
+    // children and attributes go here
+}
+----
+
+Adds a task to the firmware image, and specifies how to build and configure it.
+
+Attributes:
+
+- `stack-size BYTES` gives the task's stack size in bytes.
+- `priority P` sets the task's scheduling priority to `P`, where 0 is the most
+  important.
+- `wait-for-reinit` (optional) tells the kernel not to start this task
+  automatically on boot, and instead waits for the supervisor task to do it.
+- `features NAME...` (optional) adds its arguments as Cargo features to the
+  task's build configuration.
+- `no-default-features` (optional) switches off the task crate's default Cargo
+  features.
+- `target TRIPLE` (optional) overrides the target triple used to build this
+  task.
+- `toolchain NAME` (optional) overrides the toolchain version used to build this
+  task. Note that dotted version numbers need to be quoted: `"1.85"`
+
+=== `task > workspace-crate`
+
+See <<workspace-crate>>.
+
+=== `task > git-crate`
+
+See <<git-crate>>.
+
+=== `task > uses-peripheral`
+
+----
+uses-peripheral PERIPHERAL
+
+uses-peripheral PERIPHERAL {
+    irq IRQNAME NOTIFICATIONNAME
+}
+----
+
+Indicates that a task uses a memory-mapped peripheral from the chipdef, causing
+it to be mapped into the task's address space.
+
+Attributes:
+
+- `irq IRQNAME NOTIFICATIONNAME` (optional, repeated): binds the IRQ called
+  `IRQNAME` in the chipdef to a notification for this task named
+  `NOTIFICATIONNAME`.
+
+=== `task > uses-task`
+
+`uses-task TASKNAME`
+
+Indicates an IPC relationship, where this task acts as a client of the task
+named `TASKNAME`.
+
+=== `task > config`
+
+See <<config>>.
+
+=== `task > notification`
+
+`notification NAME`
+
+Defines a named notification bit for use by software.
+
+Note that you do not need to use `notification` to declare bits used in
+`uses-peripheral > irq`. Those are implicitly declared by being used.
+
+=== `task > assign-section`
+
+`assign-section SECTIONNAME REGIONNAME`
+
+Maps the ELF section `SECTIONNAME` in the task to the memory area named
+`REGIONNAME` in the chipdef. This can be used to place portions of a task's
+memory in controlled locations, such as auxiliary SRAMs.
+
+== Shared nodes
+
+[[workspace-crate]]
+=== `workspace-crate`
+
+`workspace-crate PACKAGENAME`
+
+Specifies that a crate should be sourced from the workspace containing this
+appcfg.
+
+
+[[git-crate]]
+=== `git-crate`
+
+----
+git-crate {
+    repo REPOSITORY
+    package PACKAGENAME
+    rev REV
+}
+----
+
+Specifies that a crate should be sourced from an external Git repository.
+
+Conflicts with `workspace-crate`.
+
+Attributes:
+
+- `repo REPOSITORY` gives the URL of the repository.
+- `package PACKAGENAME` gives the package (crate) name to build from the
+  repository.
+- `rev REV` specifies the git-rev of the version to use.
+
+[[config]]
+=== `config`
+
+----
+config {
+    // arbitrary data goes here
+}
+----
+
+Provides arbitrary user-defined configuration data to a build. The contents of
+the `config` node use a subset of KDL that can be converted to JSON for easy
+sharing. Details to come (see examples in the repo for now).

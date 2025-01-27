@@ -7,8 +7,8 @@
 #![no_std]
 #![no_main]
 
+use drv_stm32xx_sys_api::Stm32Sys as Sys;
 use hubris_task_slots::SLOTS;
-use drv_stm32xx_sys_api::{Stm32Sys as Sys, Port};
 
 #[export_name = "main"]
 fn main() -> ! {
@@ -48,13 +48,7 @@ fn main() -> ! {
             }
         }
 
-        let r = userlib::sys_send(
-            pong,
-            ping_op,
-            message,
-            &mut incoming,
-            &mut leases,
-        );
+        let r = userlib::sys_send(pong, ping_op, message, &mut incoming, &mut leases);
 
         match r {
             Ok((_retval, _response_len)) => {

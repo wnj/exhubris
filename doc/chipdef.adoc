@@ -1,0 +1,120 @@
+= Chip Definition Format
+
+A chip definition file, or "chipdef," defines the features of a microcontroller
+system-on-a-chip in a way that can be reused across boards.
+
+== Basics
+
+Chipdefs are written in https://kdl.dev/[KDL2].
+
+To distinguish a chipdef from other KDL files, we require the first non-comment
+non-whitespace node in the file to be `chip`.
+
+== `chip` (required)
+
+`chip NAME`
+
+- `NAME` is the name that board files will use to reference this chip.
+
+== `target-triple` (required)
+
+`target-triple TRIPLE`
+
+- `TRIPLE` is the target triple that should be used when compiling code for this
+  chip, by default.
+
+== `vector-table-size` (required)
+
+`vector-table-size BYTES`
+
+- `BYTES` is an integer giving the number of bytes to reserve for this chip's
+  vector table at the start of flash.
+
+== `probe-rs-name`
+
+`probe-rs-name NAME`
+
+- `NAME` is the name the `probe_rs` crate uses to refer to this chip. This is
+  required to get full Humility support.
+
+== `compatible`
+
+----
+compatible {
+    - FIRST
+    - SECOND
+    // and so forth
+}
+----
+
+`compatible` provides a list of strings (`FIRST`, `SECOND`, ... in the example)
+that code can use to match on this chip, using the `hubris_chip` `cfg`. They
+should be listed from most specific to least specific.
+
+Example:
+
+----
+compatible {
+    - STM32G031K8 // flash size + pin count
+    - STM32G031x8 // flash size only
+    - STM32G031 // subfamily only
+    - STM32G0 // family only
+    - arm-cortex-m0plus // microprocessor generic name
+}
+----
+
+== `memory`
+
+----
+memory {
+    // children go here
+}
+----
+
+The `memory` section defines the chip's physical address space layout.
+
+=== `region`
+
+----
+region NAME {
+    base ADDRESS
+    size BYTES
+    // attributes go here
+}
+----
+
+Defines an allocatable region of address space. Three values of `NAME` are
+special:
+
+- `vectors` is where the vector table gets placed.
+- `ram` is used for task RAM images and stacks, including the kernel stack.
+- `flash` is used for task and kernel code.
+
+Attributes:
+
+- `base ADDRESS`: gives the start of the region
+- `size BYTES`: gives the region length in bytes
+- `read` (optional): marks the region as potentially readable.
+- `write` (optional): marks the region as potentially writable.
+- `execute` (optional): marks the region as potentially executable.
+
+== `peripheral`
+
+----
+peripheral NAME {
+    base ADDRESS
+    size BYTES
+    // optional attributes
+}
+----
+
+Defines a memory-mapped peripheral that can be mapped into tasks.
+
+Attributes:
+
+- `base ADDRESS`: gives the base address of the peripheral.
+- `size BYTES`: gives the size in bytes of the region to map into a task that
+  uses this peripheral.
+- `irq NAME NUMBER` (optional): associates this peripheral with a system IRQ
+  `NUMBER`, and gives it the name `NAME` for reference by tasks. For peripherals
+  with only one IRQ, the current convention is to use the name `irq`.

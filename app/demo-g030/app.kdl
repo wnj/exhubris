@@ -87,9 +87,13 @@ task display {
     priority 3
     uses-task sys
 
-  //  uses-peripheral tim17 {
-  //      irq irq tim-irq
-  //  }
+    uses-peripheral tim17 {
+        irq irq tim-irq
+    }
+
+    uses-peripheral spi1 {
+        irq irq spi-irq
+    }
 
     notification timer-display
 }

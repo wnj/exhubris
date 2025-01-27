@@ -40,13 +40,19 @@ peripheral usart1 {
 peripheral usart2 {
     base 0x4000_4400
     size 0x400
-    irq irq 28  // note: conflicts with LPUART2
+    irq irq 28
+}
+
+peripheral spi1 {
+    base 0x4001_3000
+    size 0x400
+    irq irq 25
 }
 
 peripheral tim17 {
     base 0x4001_4800
     size 0x400
-    irq irq 28
+    irq irq 22
 }
 
 peripheral rcc {
