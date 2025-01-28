@@ -1,0 +1,242 @@
+= The `hubake` build tool
+
+`hubake` provides a frontend to the other Hubris build tools. It's intended to
+operate something like `rustup`: you can use a single version of `hubake` across
+Hubris projects that depend on different kernel and build tool versions.
+
+``hubake``'s name is an homage to `bitbake` from OpenEmbedded/Yocto.
+
+== Getting `hubake`
+
+`hubake` lives in the exhubris repo. It's intended to be installed in your
+user's normal `cargo install` directory, though if you'd like to place it
+somewhere else, you can do as you wish.
+
+To install it in the typical location, run:
+
+----
+cargo install --git https://github.com/cbiffle/exhubris \
+    hubake \
+    --locked
+----
+
+(The backslashes help to wrap the commandline for presentation in this page; you
+can remove them to put it all on one line if you want.)
+
+The `--locked` flag ensures that the tool is built with the package versions
+listed in the `exhubris` repo, which is what `hubake` is tested against. It is
+probably safe to omit if you'd prefer.
+
+== An example session
+
+Here's what you might see looking over someone's shoulder as they use `hubake`
+in a newly checked out project.
+
+----
+$ hubake setup
+checking setup in project root: /home/cbiffle/proj/exhubris/exttest
+system: git https://github.com/cbiffle/exhubris
+   rev: 696ecfe9197a27712a7f65deb901274f5553370d
+building tool for rev, this may take a bit...
+setup complete
+
+$ hubake build app/demo/app.kdl
+...normal build system output follows...
+----
+
+== Project root (`hubris-env.toml`)
+
+`hubake` operates in terms of _projects._ A project is stored in a directory
+that contains file called `hubris-env.toml`. This directory is called the
+_project root_ (since it can contain other directories).
+
+The location of the project root is passed into the build tools, and they will
+derive certain other paths from it (to be described elsewhere in the build
+system docs).
+
+`hubris-env.toml` controls the behavior of `hubake` for that project. Its role
+is very similar to `rust-toolchain.toml` in a Rust project: it ensures that
+anyone working in the project has the same version of the tools.
+
+Most projects' `hubris-env.toml` will look something like this:
+
+[source=toml]
+----
+[system]
+source = "git"
+repo = "http://github.com/cbiffle/exhubris"
+rev = "696ecfe9197a27712a7f65deb901274f5553370d"
+----
+
+This specifies that the project's version of the exhubris tooling comes from
+`cbiffle/exhubris` at a specific git rev.
+
+=== `[system]` section
+
+==== `source`
+
+Defines how to obtain the build tools. There are currently two values defined:
+
+- `git`: check out the build tools from a git repo.
+- `here`: use build tools from inside the project itself. This is mostly useful
+  for demo projects inside `exhubris`, but could also be used to replace or
+  intercept the build tools if desired.
+
+==== `repo`
+
+URL or path of a git repo containing the build tools. Useful only when
+`source="git"`.
+
+==== `rev`
+
+Revision of the build tools from the repo, in `git-rev` format. Useful only when
+`source="git"`.
+
+CAUTION: for reproduceable builds, this should probably be a literal hexadecimal
+git hash. More readable alternatives like a tag name can work, but if the tag
+changes, you won't be able to reproduce the results. A branch name is almost
+certainly a bad idea.
+
+
+== `hubake` operation
+
+Whenever `hubake` is run, it walks up parent directories until it finds a
+`hubris-env.toml` file. Currently it is willing to cross filesystem boundaries
+during this process, but that may change.
+
+TIP: The parent directory walk is performed _textually_ by removing components
+from the path to the current working directory. This means the behavior will be
+different if you're doing something very odd with filesystem links. This is
+deliberate, since it's guaranteed to terminate.
+
+`hubake` then reads the `hubris-env.toml` and looks for corresponding build
+tools. If a matching copy is found, it will be used. Otherwise, a new copy will
+be built and stored.
+
+Build tools are stored in the `hubris` directory in your user's "data
+directory," which is different on different operating systems:
+
+- Linux and other XDG-style Unix: `$HOME/.local/share/hubris` (can be overridden
+  by the `$XDG_DATA_HOME` environment variable)
+- Mac: `$HOME/Library/Application Support/hubris`
+- Windows: `C:\Users\YOURNAME\AppData\Roaming\hubris`
+
+CAUTION: The contents of this directory are subject to change. Please don't make
+assumptions about their layout.
+
+Once the tools are located, `hubake` executes the `hubris-build` executable they
+contain, forwarding all command line arguments to it.
+
+=== Building tools
+
+If `hubake` decides that tools are not available, or if you've forced a rebuild
+(see `setup -f` below), `hubake` will use Cargo to obtain and build the tools at
+the correct version.
+
+By default, Cargo's output is suppressed during this process. The only output is
+a message from `hubake` saying something like
+
+`Building tools for rev, please wait...`
+
+=== Bootstrapping: `setup`
+
+While most `hubake` command lines are forwarded through to a particular version
+of the tools, there is one exception: `setup`.
+
+`hubake setup` is handled internally and serves to validate the current project
+layout and make sure the appropriate tools are installed.
+
+`hubake setup -f` can be used to "force" setup, reinstalling tools even if
+there's an existing copy.
+
+This means that the Hubris tools themselves (the ones called _by_ `hubake`)
+cannot have a `setup` subcommand.
+
+=== Typical commands
+
+The precise set of commands available through `hubake` can change with different
+versions of the tools, but the following commands should generally be available.
+
+For an exact listing of commands provided by your tools version, run `hubake
+help`. For details on any specific command `xx`, run `hubake xx --help`.
+
+==== `hubake build`
+
+Example:
+
+`hubake build myapp/app.toml`
+
+Loads an appcfg from a provided path and builds the app.
+
+`--help` shows the actual set of options available.
+
+Typical options may include:
+
+- `--cargo-verbose` enables verbose output from Cargo, e.g. listing all the
+  build steps.
+- `-o PATH` controls where the build archive is written. By default it's written
+  to `appname-build.zip` in the project root, where `appname` is the name
+  defined in the appcfg.
+
+== Build system interface
+
+`hubake` defines a very simple interface to the build tools, in the hopes that
+we won't have to modify it very often.
+
+Once `hubake` locates the appropriate version of the build tools (more below),
+it...
+
+- Sets the environment variable `HUBRIS_PROJECT_ROOT` to the path where it
+  located the `hubris-env.toml` file.
+- Calls the build tool executable, forwarding all command line arguments and
+  stdin/stdout/stderr.
+- Returns its exit code.
+
+TIP: Unix users may recognize this as `exec`. `hubake` does not currently use
+`exec` because it's not portable to Windows.
+
+=== Finding the build tools with `source="here"`
+
+When the `hubris-env.toml` declares `system.source="here"`, `hubake` will locate
+a Cargo package in the current workspace named `hubris-build`, and then run an
+executable from that package, which must also be named `hubris-build`.
+
+This is more or less literally:
+
+----
+cargo run -p hubris-build --bin hubris-build -- ARGS
+----
+
+=== Finding the build tools with `source="git"`
+
+When the `hubris-env.toml` declares `system.source="git"`, `hubake` defers to
+`cargo install` in `--git` mode. The repository named must contain a package
+`hubris-build` that contains an executable `hubris-build`. This executable will
+be installed to a ``hubake``-specific path, _not_ into your bin directory.
+
+`hubake` uses ``cargo install``'s install tracking features to avoid rebuilding
+the tools if they're already installed. (This works by maintaining a small
+metadata file next to the binary in our data directory.) To force reinstall, use
+`hubake setup -f`.
+
+
+== Design rationale
+
+The fundamental goals of `hubake` are:
+
+1. To provide a concise and consistent command for building and manipulating
+   Hubris projects.
+2. To provide consistent, reproduceable results in any given project,
+   _independent of the version of `hubake` that's installed._
+3. To not require updating very often.
+
+Goal 1 is met by suggesting that users install `hubake` globally, so they need
+only type `hubake` in any project. (Users may decide to do it differently, of
+course.)
+
+Goal 2 is the reason for the `hubris-env.toml` file, providing an exact pinning
+of the build tools version.
+
+Goal 3 is the reason for keeping the `hubake` interface to the build tools
+simple. We should only need to update `hubake` if that interface changes (or if
+it turns out to contain some unforeseen bug).
