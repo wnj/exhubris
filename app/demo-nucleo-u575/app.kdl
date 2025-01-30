@@ -7,7 +7,7 @@ app demo-nucleo-u575
 // Currently the board information is inlined. It would be nice to refer to an
 // external file, like we already do for chip definitions.
 board nucleo-u575zi {
-    chip stm32u575zi_ns
+    chip "proj:chips/stm32u575zi_ns.kdl"
 }
 
 // Instructions for building the kernel.

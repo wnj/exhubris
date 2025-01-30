@@ -12,7 +12,7 @@ app kbd
 // Currently the board information is inlined. It would be nice to refer to an
 // external file, like we already do for chip definitions.
 board fourk {
-    chip stm32l412kb
+    chip "proj:chips/stm32l412kb.kdl"
 }
 
 // Instructions for building the kernel.

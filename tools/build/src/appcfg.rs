@@ -260,7 +260,6 @@ pub fn parse_app(
             &source,
             doc,
             "board",
-            Namespace::Board,
             ctx,
             |s, name, d| parse_board(s, name, d, ctx),
         )?;
@@ -314,12 +313,11 @@ pub fn parse_app(
 pub fn get_unique_child_or_include<T>(
     source: &Arc<NamedSource<String>>,
     doc: &KdlDocument,
-    name: &str,
-    ns: Namespace,
+    kind: &str,
     ctx: &dyn LoadContext,
     proc: impl FnOnce(Arc<NamedSource<String>>, Spanned<String>, &KdlDocument) -> miette::Result<T>,
 ) -> miette::Result<T> {
-    let child = get_unique_child(doc, name)?;
+    let child = get_unique_child(doc, kind)?;
     if child.children().is_some() {
         if child.entries().len() != 1 {
             bail!(
@@ -344,23 +342,23 @@ pub fn get_unique_child_or_include<T>(
 
         proc(source.clone(), name_str, required_children(child)?)
     } else {
-        let ident = get_unique_string_value(doc, name)?;
-        let (docsrc, doc) = ctx.get_resource(ns, ident.value())?;
+        let ident = get_unique_string_value(doc, kind)?;
+        let (docsrc, doc) = ctx.get_resource(ident.value())?;
         let first = doc.nodes().first().ok_or_else(|| {
-            miette!("alleged appconfig doesn't contain any nodes")
+            miette!("alleged config file doesn't contain any nodes")
         })?;
-        if first.name().value() != name {
+        if first.name().value() != kind {
             bail!(
                 labels=[LabeledSpan::at(first.name().span(), "expected here")],
-                "this may not be the right kind of config, first node is not '{name}'"
+                "this may not be the right kind of config, first node is not '{kind}'"
             );
         }
-        let name = get_unique_string_value(&doc, name)?;
+        let name = get_unique_string_value(&doc, kind)?;
         proc(docsrc, name, &doc)
             .wrap_err_with(|| {
                 miette!(
                     labels = [LabeledSpan::at(ident.span(), ident.value())],
-                    "can't parse {ns} included from {}",
+                    "can't parse resource included from {}",
                     source.name(),
                 ).with_source_code(source.clone())
             })
@@ -378,7 +376,6 @@ pub fn parse_board(
             &source,
             doc,
             "chip",
-            Namespace::Chip,
             ctx,
             parse_chip,
         ).wrap_err_with(|| "can't process chip for board")?;
@@ -1097,7 +1094,7 @@ pub(crate) fn get_uniquely_named_children<'d>(doc: &'d KdlDocument, name: &str) 
 }
 
 pub trait LoadContext {
-    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)>;
+    fn get_resource(&self, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -1118,7 +1115,7 @@ impl Display for Namespace {
 pub struct SelfContained;
 
 impl LoadContext for SelfContained {
-    fn get_resource(&self, _: Namespace, _: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
+    fn get_resource(&self, _: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
         bail!("includes not supported in this context")
     }
 }
@@ -1136,16 +1133,15 @@ impl FsContext {
 }
 
 impl LoadContext for FsContext {
-    fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
-        let mut path = self.root.join(match ns {
-            Namespace::Chip => "chips",
-            Namespace::Board => "boards",
-        });
-        path.push(identifier);
-        path.set_extension("kdl");
+    fn get_resource(&self, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
+        // Currently, the fscontext is only aware of a single identifier prefix:
+        let Some(rest) = identifier.strip_prefix("proj:") else {
+            bail!("unknown identifier prefix: {identifier}");
+        };
+        let path = self.root.join(rest);
         let src = std::fs::read_to_string(&path)
             .into_diagnostic()
-            .wrap_err_with(|| format!("can't load {ns} file: {}", path.display()))?;
+            .wrap_err_with(|| format!("can't load file: {}", path.display()))?;
         let named_src = Arc::new(NamedSource::new(
                 path.display().to_string(),
                 src.clone(),
@@ -1472,38 +1468,27 @@ mod tests {
 
     #[derive(Default)]
     struct FakeContext {
-        boards: BTreeMap<String, (Arc<NamedSource<String>>, KdlDocument)>,
-        chips: BTreeMap<String, (Arc<NamedSource<String>>, KdlDocument)>,
+        map: BTreeMap<String, (Arc<NamedSource<String>>, KdlDocument)>,
     }
 
     impl FakeContext {
-        fn add_board(&mut self, ident: &str, path: &str, text: &str) {
+        fn add_ident(&mut self, ident: &str, path: &str, text: &str) {
             let nsrc = Arc::new(NamedSource::new(path, text.to_string()));
             let doc = text.parse().expect("fixture failed to parse");
-            self.boards.insert(ident.to_string(), (nsrc, doc));
-        }
-        #[allow(dead_code)] // TODO
-        fn add_chip(&mut self, ident: &str, path: &str, text: &str) {
-            let nsrc = Arc::new(NamedSource::new(path, text.to_string()));
-            let doc = text.parse().expect("fixture failed to parse");
-            self.chips.insert(ident.to_string(), (nsrc, doc));
+            self.map.insert(ident.to_string(), (nsrc, doc));
         }
     }
 
     impl LoadContext for FakeContext {
-        fn get_resource(&self, ns: Namespace, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
-            let map = match ns {
-                Namespace::Chip => &self.chips,
-                Namespace::Board => &self.boards,
-            };
-            map.get(identifier)
-                .ok_or_else(|| miette!("can't find {ns} named '{identifier}'"))
+        fn get_resource(&self, identifier: &str) -> miette::Result<(Arc<NamedSource<String>>, KdlDocument)> {
+            self.map.get(identifier)
+                .ok_or_else(|| miette!("can't find resource '{identifier}'"))
                 .cloned()
         }
     }
 
     #[test]
-    #[should_panic(expected = "does not appear to be valid KDL")]
+    #[should_panic]
     fn app_not_even_kdl() {
         let appcfg = "LOL I AM THE LIZARD KING";
         parse_app_str("<input>", appcfg, &SelfContained).unwrap();
@@ -1581,7 +1566,7 @@ mod tests {
     #[test]
     fn app_board_include() {
         let mut ctx = FakeContext::default();
-        ctx.add_board("film-board-of-canada", "fake-board.kdl", r#"
+        ctx.add_ident("proj:film-board-of-canada", "fake-board.kdl", r#"
             board "film (canada)"
             chip "potato" {
                 target-triple "i4004-none-gnueabi"
@@ -1592,7 +1577,7 @@ mod tests {
             "#);
         let appcfg = r#"
             app "charles"
-            board "film-board-of-canada"
+            board "proj:film-board-of-canada"
             kernel {
                 workspace-crate "omglol"
                 stack-size 1234

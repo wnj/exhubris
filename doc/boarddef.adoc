@@ -1,0 +1,61 @@
+:toc:
+:toc-placement!:
+
+= Board Definition Format
+
+A board definition file, or "boarddef," defines parameters common to all
+applications that target a particular board.
+
+This is currently very minimal.
+
+toc::[]
+
+== Basics
+
+Boarddefs are written in https://kdl.dev/[KDL2].
+
+To distinguish a boarddef from other KDL files, when writing a boarddef in its
+own file, we require the first non-comment non-whitespace node in the file to be
+`board`.
+
+Here is a simple example.
+
+----
+board my-awesome-pcb
+
+chip "proj:chips/stm32f407vg.kdl"
+----
+
+It's also possible to write a boarddef _inline_ inside a chipdef, for one-off
+boards. In this case this restriction is lifted.
+
+
+== `board` (required)
+
+`board NAME`
+
+- `NAME` is the name of this board.
+
+== `chip` (required)
+
+----
+chip PATH
+----
+
+Defines the SoC or chip on this board. References a `chipdef` file.
+
+`PATH` can refer to different namespaces based on a prefix. Currently, the only
+defined prefix is `proj:`, which causes the rest of the path to be interpreted
+relative to the current project root.
+
+As an alternative, it's possible to write the chipdef inline, in which case it
+would look like this:
+
+----
+chip NAME {
+    contents
+}
+----
+
+...where `contents` is the body of a chipdef file, except for the initial `chip`
+line.

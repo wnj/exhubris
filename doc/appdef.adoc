@@ -43,19 +43,29 @@ task idle {
 
 == `board` (required)
 
+Defines the board being targeted by this image. The board can be defined two
+different ways. First, in a separate file:
+
+----
+board PATH
+----
+
+...where `PATH` is a prefixed path to a boarddef KDL file. Currently the only
+supported prefix is `proj:`, which causes the rest of the path to be interpreted
+from the project root.
+
+The second option is to write the boarddef inline:
+
 ----
 board NAME {
     chip CHIPNAME
 }
 ----
 
-Defines the board being targeted by this image. This section is very minimal and
-will be extended/replaced later. Currently this only gives the board a `NAME`
-and references the chipdef.
+This can be useful for simple or one-off boards.
 
-Attributes:
+See the `boarddef` docs for specifics on its contents.
 
-- `chip CHIPNAME`: references a chipdef by name
 
 == `kernel` (required)
 

@@ -7,14 +7,18 @@ system-on-a-chip in a way that can be reused across boards.
 
 Chipdefs are written in https://kdl.dev/[KDL2].
 
-To distinguish a chipdef from other KDL files, we require the first non-comment
-non-whitespace node in the file to be `chip`.
+To distinguish a chipdef from other KDL files, when putting a chipdef in its own
+file, we require the first non-comment non-whitespace node in the file to be
+`chip`. It's also possible to write a chipdef _inline_ within a boarddef, in
+which case this restriction is lifted.
+
 
 == `chip` (required)
 
 `chip NAME`
 
-- `NAME` is the name that board files will use to reference this chip.
+- `NAME` is the name given to this chip definition. It can be more or less
+  arbitrary, and isn't currently used for very much.
 
 == `target-triple` (required)
 

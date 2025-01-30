@@ -7,7 +7,7 @@ app demo
 // Currently the board information is inlined. It would be nice to refer to an
 // external file, like we already do for chip definitions.
 board nucleo-g031k8 {
-    chip stm32g031k8
+    chip "proj:chips/stm32g031k8.kdl"
 }
 
 // Instructions for building the kernel.
