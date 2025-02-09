@@ -1,14 +1,16 @@
 [package]
-name = "display"
+name = "spi"
 version = "0.1.0"
 edition = "2021"
-
-[features]
 
 [dependencies]
 drv-stm32xx-sys-api = { version = "0.1.0", path = "../../drv/stm32xx-sys-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 hubris-notifications = { version = "0.1.0", path = "../../sys/notifications" }
 userlib = { workspace = true, features = ["no-panic"] }
-idyll_runtime = { version = "0.1.0", path = "../../sys/idyll_runtime" }
-stm32-metapac = { version = "15.0.0", features = ["rt", "stm32g030k8"] }
+stm32-metapac = { version = "16.0.0", features = ["rt", "stm32g030k8"] }
+cortex-m = { version = "0.7.7", features = ["inline-asm"] }
+
+[build-dependencies]
+hubris-build-util = { version = "0.1.0", path = "../../sys/build-util" }
+serde_json = "1.0.133"

@@ -12,7 +12,8 @@ use hubris_task_slots::SLOTS;
 fn main() -> ! {
     // Create a client for the Sys driver and make our LED pin an output.
     let sys = Sys::from(SLOTS.sys);
-    sys.set_pin_output(Port::C, 15); // GREEN led
+    // sys.set_pin_output(Port::C, 15); // GREEN led
+    sys.set_pin_output(Port::C, 13); // led D1 proto
 
     // Record the current time so we can start our delay loop properly.
     let mut next_send = userlib::sys_get_timer().now;
@@ -34,6 +35,6 @@ fn main() -> ! {
             }
         }
 
-        sys.toggle_pin(Port::C, 15);
+        sys.toggle_pin(Port::C, 13);
     }
 }

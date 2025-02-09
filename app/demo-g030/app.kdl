@@ -32,75 +32,61 @@ task sys {
     uses-peripheral gpios
 }
 
-task echo {
-    workspace-crate uart-echo
-    stack-size 256
-    priority 2
-    features chip-stm32g030k8
-    uses-task sys
-    uses-peripheral usart2 {
-        irq irq usart-irq
-    }
-    config {
-        uart-clock-hz 64_000_000
-        baud-rate 115_200
-        pins {
-            - name=A2 af=1
-            - name=A3 af=1
-        }
-    }
-}
-
-// IPC server.
-task pong {
-    workspace-crate pong
-    stack-size 160
-    priority 2
-}
-
-// IPC generator.
-task ping {
-    workspace-crate ping
-    stack-size 256
-    priority 3
-    uses-task pong
-    uses-task sys
-        config {
-        led-pin A0
-    }
-}
-
 // blink LED
 task blinky {
     workspace-crate blinky
     stack-size 160
-    priority 3
+    priority 6
     uses-task sys
 
     notification timer-blinky
 }
 
-// 7-segment hex display
-task display {
-   workspace-crate display
-    stack-size 256
+// SPI
+task spi {
+    workspace-crate spi
+    stack-size 224
     priority 3
     uses-task sys
+//    config {
+//        spi-clock-hz 1_000_000
+//       pins {
+//            - name=B0 af=0 // NSS
+//            - name=B3 af=0 // SCK
+//            - name=B4 af=0 // MISO
+//           - name=B5 af=0 // MOSI
+ //       }
+ //   }
 
-    uses-peripheral tim17 {
-        irq irq tim-irq
-    }
+    uses-peripheral spi1
+    uses-peripheral usart2
 
-    uses-peripheral spi1 {
-        irq irq spi-irq
-    }
-
-    notification timer-display
+    notification timer-spi
 }
+
+// 7-segment hex display
+//task display {
+//   workspace-crate display
+//    stack-size 256
+//    priority 2
+//    uses-task sys
+
+//    uses-peripheral tim17 {
+//        irq irq tim-irq
+//    }
+
+//    uses-peripheral spi1 {
+//        irq irq spi-irq
+//    }
+
+//    notification timer-display
+//}
 
 // Idle task. This must be the lowest priority task.
 task idle {
     workspace-crate idle
     stack-size 32
-    priority 4
+    priority 10
+
+    features insomniac
 }
