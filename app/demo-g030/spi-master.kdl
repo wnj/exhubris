@@ -1,0 +1,65 @@
+// Demo Application Definition
+
+// App name is used for output files etc. It must be the first non-blank
+// non-comment line in the file.
+app demo
+
+// Currently the board information is inlined. It  be nice to refer to an
+// external file, like we already do for chip definitions.
+board bare-metal-stm32g030 {
+    chip stm32g030k8
+}
+
+// Instructions for building the kernel.
+kernel {
+    workspace-crate kernel-generic-stm32g030
+    stack-size 544
+    features clock-64mhz-hsi16
+}
+
+task super {
+    workspace-crate minisuper
+    stack-size 128
+    priority 0
+}
+
+task sys {
+    workspace-crate drv-stm32xx-sys
+    stack-size 256
+    priority 1
+    features chip-stm32g030k8
+    uses-peripheral rcc
+    uses-peripheral gpios
+}
+
+// blink LED
+task blinky {
+    workspace-crate blinky
+    stack-size 160
+    priority 6
+    uses-task sys
+
+    notification timer-blinky
+}
+
+// SPI (master)
+task spi {
+    workspace-crate spi-master
+    stack-size 224
+    priority 3
+    uses-task sys
+
+    uses-peripheral spi1
+    uses-peripheral usart2
+
+    notification timer-spi
+}
+
+// Idle task. This must be the lowest priority task.
+task idle {
+    workspace-crate idle
+    stack-size 32
+    priority 10
+
+    features insomniac
+}
