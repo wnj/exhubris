@@ -1843,6 +1843,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "spi-slave"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "drv-stm32xx-sys-api",
+ "hubris-build-util",
+ "hubris-notifications",
+ "hubris-task-slots",
+ "serde_json",
+ "stm32-metapac 16.0.0",
+ "userlib",
+]
+
+[[package]]
 name = "ssmarshal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
