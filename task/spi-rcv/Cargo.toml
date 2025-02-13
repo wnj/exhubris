@@ -1,5 +1,5 @@
 [package]
-name = "spi-slave"
+name = "spi-rcv"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,5 @@ edition = "2021"
 drv-stm32xx-sys-api = { version = "0.1.0", path = "../../drv/stm32xx-sys-api" }
 hubris-task-slots = { version = "0.1.0", path = "../../sys/task-slots" }
 hubris-notifications = { version = "0.1.0", path = "../../sys/notifications" }
-# userlib = { workspace = true, features = ["no-panic"] }
-userlib = { workspace = true }
+userlib = { workspace = true, features = ["no-panic"] }
 stm32-metapac = { version = "16.0.0", features = ["rt", "stm32g030k8"] }
-cortex-m = { version = "0.7.7", features = ["inline-asm"] }

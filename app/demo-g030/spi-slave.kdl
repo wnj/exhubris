@@ -48,10 +48,20 @@ task spi {
     stack-size 224
     priority 3
     uses-task sys
-
+    uses-task spircv
+    
     uses-peripheral spi1 {
         irq irq spi-irq
     }
+}
+
+// SPI (echo)
+task spircv {
+    workspace-crate spi-rcv
+    stack-size 224
+    priority 3
+    uses-task sys
+  
     uses-peripheral usart2
 }
 
